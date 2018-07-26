@@ -1,20 +1,19 @@
 /*
- * Copyright (C) 2013-2017 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #include "controller_p.h"
 
@@ -116,7 +115,7 @@ void ControllerPrivate::init(Application *app, Dispatcher *_dispatcher)
 
         for (int i = 0; i < className.length(); ++i) {
             const QChar c = className.at(i);
-            if (c.isLower()) {
+            if (c.isLower() || c.isDigit()) {
                 controlerNS.append(c);
                 lastWasUpper = false;
             } else if (c == QLatin1Char('_')) {
@@ -193,7 +192,7 @@ Action *ControllerPrivate::actionClass(const QVariantHash &args)
     const auto attributes = args.value(QStringLiteral("attributes")).value<QMap<QString, QString> >();
     const QString actionClass = attributes.value(QStringLiteral("ActionClass"));
 
-    QObject *object = instantiateClass(actionClass.toLatin1(), "Cutelyst::Action");
+    QObject *object = instantiateClass(actionClass, "Cutelyst::Action");
     if (object) {
         Action *action = qobject_cast<Action*>(object);
         if (action) {
@@ -212,7 +211,7 @@ Action *ControllerPrivate::createAction(const QVariantHash &args, const QMetaMet
 {
     Action *action = actionClass(args);
     if (!action) {
-        return 0;
+        return nullptr;
     }
 
     QStack<Component *> roles = gatherActionRoles(args);
@@ -263,9 +262,9 @@ void ControllerPrivate::registerActionMethods(const QMetaObject *meta, Controlle
             }
 
             Action *action = createAction({
-                                              {QStringLiteral("name")      , QVariant::fromValue(name)},
-                                              {QStringLiteral("reverse")   , QVariant::fromValue(reverse)},
-                                              {QStringLiteral("namespace") , QVariant::fromValue(controller->ns())},
+                                              {QStringLiteral("name"), QVariant::fromValue(name)},
+                                              {QStringLiteral("reverse"), QVariant::fromValue(reverse)},
+                                              {QStringLiteral("namespace"), QVariant::fromValue(controller->ns())},
                                               {QStringLiteral("attributes"), QVariant::fromValue(attrs)}
                                           },
                                           method,
@@ -386,7 +385,7 @@ QMap<QString, QString> ControllerPrivate::parseAttributes(const QMetaMethod &met
     if (!ret.contains(QStringLiteral("Args")) && !ret.contains(QStringLiteral("CaptureArgs")) &&
             (ret.contains(QStringLiteral("AutoArgs")) || ret.contains(QStringLiteral("AutoCaptureArgs")))) {
         if (ret.contains(QStringLiteral("AutoArgs")) && ret.contains(QStringLiteral("AutoCaptureArgs"))) {
-            qFatal("Action '%s' has both AutoArgs and AutoCaptureArgs, which is not allowed", name.data());
+            qFatal("Action '%s' has both AutoArgs and AutoCaptureArgs, which is not allowed", name.constData());
         } else {
             QString parameterName;
             if (ret.contains(QStringLiteral("AutoArgs"))) {
@@ -423,9 +422,9 @@ QMap<QString, QString> ControllerPrivate::parseAttributes(const QMetaMethod &met
 QStack<Component *> ControllerPrivate::gatherActionRoles(const QVariantHash &args)
 {
     QStack<Component *> roles;
-    const auto attributes = args.value(QStringLiteral("attributes")).value<QMap<QByteArray, QByteArray> >();
-    auto doesIt = attributes.constFind(QByteArrayLiteral("Does"));
-    while (doesIt != attributes.constEnd()) {
+    const auto attributes = args.value(QStringLiteral("attributes")).value<ParamsMultiMap>();
+    auto doesIt = attributes.constFind(QStringLiteral("Does"));
+    while (doesIt != attributes.constEnd() && doesIt.key() == QLatin1String("Does")) {
         QObject *object = instantiateClass(doesIt.value(), QByteArrayLiteral("Cutelyst::Component"));
         if (object) {
             roles.push(qobject_cast<Component *>(object));
@@ -469,9 +468,9 @@ QString ControllerPrivate::parseChainedAttr(const QString &attr)
     return ret;
 }
 
-QObject *ControllerPrivate::instantiateClass(const QByteArray &name, const QByteArray &super)
+QObject *ControllerPrivate::instantiateClass(const QString &name, const QByteArray &super)
 {
-    QString instanceName = QString::fromLatin1(name);
+    QString instanceName = name;
     if (!instanceName.isEmpty()) {
         instanceName.remove(QRegularExpression(QStringLiteral("\\W")));
 
@@ -511,7 +510,7 @@ QObject *ControllerPrivate::instantiateClass(const QByteArray &name, const QByte
                 return object;
             }
         } else {
-            Component *component = application->createComponentPlugin(QString::fromLatin1(name));
+            Component *component = application->createComponentPlugin(name);
             if (component) {
                 return component;
             }
@@ -523,12 +522,8 @@ QObject *ControllerPrivate::instantiateClass(const QByteArray &name, const QByte
         }
 
         if (!id) {
-            qCCritical(CUTELYST_CONTROLLER)
-                    << "Class name"
-                    << instanceName
-                    << "is not registered, you can register it with qRegisterMetaType<"
-                    << instanceName.toLatin1().data()
-                    << ">();";
+            qFatal("Could not create component '%s', you can register it with qRegisterMetaType<%s>(); or set a proper CUTELYST_PLUGINS_DIR",
+                   qPrintable(instanceName), qPrintable(instanceName));
         }
     }
     return nullptr;

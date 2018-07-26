@@ -1,20 +1,19 @@
 /*
- * Copyright (C) 2015-2016 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2015-2017 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #ifndef PAGINATION_H
 #define PAGINATION_H
@@ -26,6 +25,15 @@ namespace Cutelyst {
 
 class CUTELYST_PLUGIN_UTILS_PAGINATION_EXPORT Pagination : public QVariantMap
 {
+    Q_GADGET
+    Q_PROPERTY(int limit READ limit CONSTANT)
+    Q_PROPERTY(int offset READ offset CONSTANT)
+    Q_PROPERTY(int currentPage READ currentPage CONSTANT)
+    Q_PROPERTY(int lastPage READ lastPage CONSTANT)
+    Q_PROPERTY(int numberOfItems READ numberOfItems CONSTANT)
+    Q_PROPERTY(bool enableFirst READ enableFirst CONSTANT)
+    Q_PROPERTY(bool enableLast READ enableLast CONSTANT)
+    Q_PROPERTY(QVector<int> pages READ pages CONSTANT)
 public:
     Pagination();
     /**
@@ -57,6 +65,21 @@ public:
      * Returns the number of the last page
      */
     int lastPage() const;
+
+    /**
+     * Returns the total number of items
+     */
+    int numberOfItems() const;
+
+    /**
+     * Returns true if the first page link should be enabled
+     */
+    bool enableFirst() const;
+
+    /**
+     * Returns true if the last page link should be enabled
+     */
+    bool enableLast() const;
 
     /**
      * Returns the list of pages, with each page number as the integer

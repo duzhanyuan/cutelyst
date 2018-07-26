@@ -1,24 +1,24 @@
 /*
- * Copyright (C) 2014-2017 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2014-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #include "unixfork.h"
 
 #include "wsgi.h"
+#include "EventLoopEPoll/eventdispatcher_epoll.h"
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -38,25 +38,27 @@
 
 #include <QCoreApplication>
 #include <QSocketNotifier>
+#include <QAbstractEventDispatcher>
 #include <QTimer>
 #include <QMutex>
 #include <QThread>
 #include <QFile>
 #include <QLoggingCategory>
-#include <QFileSystemWatcher>
 
-Q_LOGGING_CATEGORY(WSGI_UNIX, "wsgi.unix")
+Q_LOGGING_CATEGORY(WSGI_UNIX, "wsgi.unix", QtWarningMsg)
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-result"
 
 static int signalsFd[2];
 
-UnixFork::UnixFork(int process, int threads, QObject *parent) : AbstractFork(parent)
+UnixFork::UnixFork(int process, int threads, bool setupSignals, QObject *parent) : AbstractFork(parent)
   , m_threads(threads)
   , m_processes(process)
 {
-    setupUnixSignalHandlers();
+    if (setupSignals) {
+        setupUnixSignalHandlers();
+    }
 }
 
 UnixFork::~UnixFork()
@@ -74,6 +76,10 @@ bool UnixFork::continueMaster(int *exit)
 
 int UnixFork::exec(bool lazy, bool master)
 {
+    if (master) {
+        std::cout << "spawned WSGI master process (pid: " << QCoreApplication::applicationPid() << ")" << std::endl;
+    }
+
     int ret;
     if (lazy) {
         if (master) {
@@ -151,6 +157,23 @@ bool UnixFork::createProcess(bool respawn)
     return !m_childs.empty();
 }
 
+void UnixFork::decreaseWorkerRespawn()
+{
+    int missingRespawn = 0;
+    auto it = m_childs.begin();
+    while (it != m_childs.end()) {
+        if (it.value().respawn > 0) {
+            --it.value().respawn;
+            missingRespawn += it.value().respawn;
+        }
+        ++it;
+    }
+
+    if (missingRespawn) {
+        QTimer::singleShot(1 * 1000, this, &UnixFork::decreaseWorkerRespawn);
+    }
+}
+
 void UnixFork::killChild()
 {
     const auto childs = m_childs.keys();
@@ -198,14 +221,14 @@ void UnixFork::stopWSGI(const QString &pidfile)
     exit(0);
 }
 
-bool UnixFork::setUmask(const QString &valueStr)
+bool UnixFork::setUmask(const QByteArray &valueStr)
 {
     if (valueStr.size() < 3) {
         std::cerr << "umask too small" << std::endl;
         return false;
     }
 
-    const char *value = valueStr.toLatin1().constData();
+    const char *value = valueStr.constData();
     mode_t mode = 0;
     if (valueStr.size() == 3) {
         mode = (mode << 3) + (value[0] - '0');
@@ -458,23 +481,32 @@ void UnixFork::handleSigChld()
     while ((p = waitpid(-1, &status, WNOHANG)) > 0)
     {
         /* Handle the death of pid p */
-//        qCDebug(WSGI_UNIX) << "SIGCHLD worker died" << p << status;
+//        qCDebug(WSGI_UNIX) << "SIGCHLD worker died" << p << WEXITSTATUS(status);
         // SIGTERM is used when CHEAPED (ie post fork failed)
+        int exitStatus = WEXITSTATUS(status);
+
         Worker worker;
         auto it = m_childs.find(p);
         if (it != m_childs.end()) {
             worker = it.value();
             m_childs.erase(it);
+        } else {
+            std::cout << "DAMN ! *UNKNOWN* worker (pid: " << p << ") died, killed by signal " << exitStatus << " :( ignoring .." << std::endl;
+            continue;
         }
 
-        int exitStatus = WEXITSTATUS(status);
-        if (WIFEXITED(status) && exitStatus == 15) {
+        if (WIFEXITED(status) && exitStatus == 15 && worker.restart == 0) {
             // Child process cheaping
             worker.null = true;
         }
 
-        if (!worker.null && !m_terminating/* && status != SIGTERM*/) {
-            std::cout << "DAMN ! worker " << worker.id << " (pid: " << p << ") died, killed by signal " << exitStatus << " :( trying respawn .." << std::endl;
+        if (!worker.null && !m_terminating) {
+            if (worker.restart == 0) {
+                std::cout << "DAMN ! worker " << worker.id << " (pid: " << p << ") died, killed by signal " << exitStatus << " :( trying respawn .." << std::endl;
+            }
+            worker.restart = 0;
+            ++worker.respawn;
+            QTimer::singleShot(1 * 1000, this, &UnixFork::decreaseWorkerRespawn);
             m_recreateWorker.push_back(worker);
             qApp->quit();
         } else if (!m_child && m_childs.isEmpty()) {
@@ -504,15 +536,33 @@ void UnixFork::handleSigChld()
 
 void UnixFork::setSched(CWSGI::WSGI *wsgi, int workerId, int workerCore)
 {
-    char buf[4096];
-    int ret;
-    int pos = 0;
     int cpu_affinity = wsgi->cpuAffinity();
     if (cpu_affinity) {
+        char buf[4096];
+
+        int pos = snprintf(buf, 4096, "mapping worker %d core %d to CPUs:", workerId + 1, workerCore + 1);
+        if (pos < 25 || pos >= 4096) {
+            qCCritical(WSGI_UNIX) << "unable to initialize cpu affinity !!!";
+            exit(1);
+        }
+#if defined(__linux__) || defined(__GNU_kFreeBSD__)
+        cpu_set_t cpuset;
+#elif defined(__FreeBSD__)
+        cpuset_t cpuset;
+#endif
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__GNU_kFreeBSD__)
         int coreCount = idealThreadCount();
+
+        int workerThreads = 1;
+        if (wsgi->threads() == QLatin1String("auto")) {
+            workerThreads = coreCount;
+        } else if (wsgi->threads().toInt() > 1) {
+            workerThreads = wsgi->threads().toInt();
+        }
+
         int base_cpu;
-        if (wsgi->threads().toInt() > 0) {
-            base_cpu = workerCore * cpu_affinity;
+        if (workerThreads > 1) {
+            base_cpu = (workerId * workerThreads) + workerCore * cpu_affinity;
         } else {
             base_cpu = workerId * cpu_affinity;
         }
@@ -520,25 +570,13 @@ void UnixFork::setSched(CWSGI::WSGI *wsgi, int workerId, int workerCore)
         if (base_cpu >= coreCount) {
             base_cpu = base_cpu % coreCount;
         }
-        ret = snprintf(buf, 4096, "mapping worker %d core %d to CPUs:", workerId + 1, workerCore + 1);
-        if (ret < 25 || ret >= 4096) {
-            qCCritical(WSGI_UNIX) << "unable to initialize cpu affinity !!!";
-            exit(1);
-        }
-        pos += ret;
-#if defined(__linux__) || defined(__GNU_kFreeBSD__)
-        cpu_set_t cpuset;
-#elif defined(__FreeBSD__)
-        cpuset_t cpuset;
-#endif
-#if defined(__linux__) || defined(__FreeBSD__) || defined(__GNU_kFreeBSD__)
+
         CPU_ZERO(&cpuset);
-        int i;
-        for (i = 0; i < cpu_affinity; i++) {
+        for (int i = 0; i < cpu_affinity; i++) {
             if (base_cpu >= coreCount)
                 base_cpu = 0;
             CPU_SET(base_cpu, &cpuset);
-            ret = snprintf(buf + pos, 4096 - pos, " %d", base_cpu);
+            int ret = snprintf(buf + pos, 4096 - pos, " %d", base_cpu + 1);
             if (ret < 2 || ret >= 4096) {
                 qCCritical(WSGI_UNIX) << "unable to initialize cpu affinity !!!";
                 exit(1);
@@ -556,13 +594,13 @@ void UnixFork::setSched(CWSGI::WSGI *wsgi, int workerId, int workerCore)
             qFatal("cpuset_setaffinity");
         }
 #endif
-        qCDebug(WSGI_UNIX) << buf;
+        std::cout << buf << std::endl;
     }
 }
 
 int UnixFork::setupUnixSignalHandlers()
 {
-    setupSocketPair(false);
+    setupSocketPair(false, true);
 
 //    struct sigaction hup;
 //    hup.sa_handler = UnixFork::signalHandler;
@@ -610,14 +648,14 @@ int UnixFork::setupUnixSignalHandlers()
     return 0;
 }
 
-void UnixFork::setupSocketPair(bool closeSignalsFD)
+void UnixFork::setupSocketPair(bool closeSignalsFD, bool createPair)
 {
     if (closeSignalsFD) {
         close(signalsFd[0]);
         close(signalsFd[1]);
     }
 
-    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, signalsFd)) {
+    if (createPair && ::socketpair(AF_UNIX, SOCK_STREAM, 0, signalsFd)) {
         qFatal("Couldn't create SIGNALS socketpair");
     }
     delete m_signalNotifier;
@@ -648,11 +686,21 @@ bool UnixFork::createChild(const Worker &worker, bool respawn)
         return false;
     }
 
+    if (worker.respawn >= 5) {
+        std::cout << "WSGI worker " << worker.id << " respawned too much!" << std::endl;
+        return false;
+    }
+
+    delete m_signalNotifier;
+    m_signalNotifier = nullptr;
+
     qint64 childPID = fork();
 
     if(childPID >= 0) {
         if(childPID == 0) {
-            setupSocketPair(true);
+            QAbstractEventDispatcher::instance()->flush();
+
+            setupSocketPair(true, true);
 
             m_child = true;
             postFork(worker.id);
@@ -660,10 +708,16 @@ bool UnixFork::createChild(const Worker &worker, bool respawn)
             int ret = qApp->exec();
             _exit(ret);
         } else {
+            setupSocketPair(false, false);
+
             if (respawn) {
                 std::cout << "Respawned WSGI worker " << worker.id << " (new pid: " << childPID << ", cores: " << m_threads << ")" << std::endl;
             } else {
-                std::cout << "spawned WSGI worker " << worker.id << " (pid: " << childPID << ", cores: " << m_threads << ")" << std::endl;
+                if (m_processes == 1) {
+                    std::cout << "spawned WSGI worker (and the only) (pid: " << childPID << ", cores: " << m_threads << ")" << std::endl;
+                } else {
+                    std::cout << "spawned WSGI worker " << worker.id << " (pid: " << childPID << ", cores: " << m_threads << ")" << std::endl;
+                }
             }
             m_childs.insert(childPID, worker);
             return true;

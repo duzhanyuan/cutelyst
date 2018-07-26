@@ -1,6 +1,6 @@
-project(cutelyst)
-
 cmake_minimum_required(VERSION 3.1)
+cmake_policy(SET CMP0048 NEW)
+
 if (POLICY CMP0043)
   cmake_policy(SET CMP0043 NEW)
 endif()
@@ -8,19 +8,15 @@ if (POLICY CMP0063)
   cmake_policy(SET CMP0063 NEW)
 endif()
 
-find_package(Qt5 5.6.0 COMPONENTS
+project(cutelyst VERSION 2.6.0 LANGUAGES CXX)
+
+find_package(Qt5 5.6.0 REQUIRED COMPONENTS
     Core
     Network
     Sql
 )
 
-set(CUTELYST_VERSION_MAJOR  "1")
-set(CUTELYST_VERSION_MINOR  "9")
-set(CUTELYST_VERSION_PATCH  "0")
-set(CUTELYST_VERSION_SUFFIX "${VERSION_SUFFIX}")
-set(CUTELYST_VERSION "${CUTELYST_VERSION_MAJOR}.${CUTELYST_VERSION_MINOR}.${CUTELYST_VERSION_PATCH}")
-
-set(CUTELYST_API_LEVEL "0")
+set(CUTELYST_API_LEVEL "2")
 
 # CMakeLists for Cutelyst library
 set(CMAKE_AUTOMOC ON)
@@ -55,11 +51,26 @@ endif ()
 # Options
 #
 option( ENABLE_MAINTAINER_CFLAGS "Enable maintainer CFlags" OFF )
-option( BUILD_TESTS "Build the Cutelyst tests" TRUE )
+option( BUILD_TESTS "Build the Cutelyst tests" ${BUILD_ALL} )
 
 if (BUILD_TESTS)
   enable_testing()
 endif()
+
+#
+# Plugin options
+#
+include(CMakeDependentOption)
+option(BUILD_ALL "Build all available modules/plugins" OFF)
+option(PLUGIN_MEMCACHED "Enables the memcached plugin" ${BUILD_ALL})
+cmake_dependent_option(PLUGIN_MEMCACHEDSESSIONSTORE "Enables the memcached based session store" ON "PLUGIN_MEMCACHED" OFF)
+option(PLUGIN_STATICCOMPRESSED "Enables the StaticCompressed plugin" ${BUILD_ALL})
+option(PLUGIN_CSRFPROTECTION "Enables the CSRF protection plugin" ${BUILD_ALL})
+option(PLUGIN_VIEW_EMAIL "Enables View::Email plugin" ${BUILD_ALL})
+option(PLUGIN_VIEW_GRANTLEE "Enables View::Grantlee plugin" ${BUILD_ALL})
+option(PLUGIN_VIEW_CLEARSILVER "Enables View::ClearSilver plugin" ${BUILD_ALL})
+option(PLUGIN_UWSGI "Enables uWSGI plugin" ${BUILD_ALL})
+option(PLUGIN_VALIDATOR_PWQUALITY "Enables ValidatorPwQuality that requires libpwquality 1.2.2 or newer" ${BUILD_ALL})
 
 # NONE
 
@@ -81,12 +92,11 @@ set (GETTEXT_PACKAGE "cutelyst")
 set (LOCALE_DIR "${DATADIR}/locale")
 set (VERSION "${CUTELYST_VERSION}")
 set (BUILDDIR "${CMAKE_BINARY_DIR}")
-set (UWSGI_PLUGINS_DIR "${CMAKE_INSTALL_PREFIX}/lib/uwsgi/plugins" CACHE PATH "Output directory for uWSGI plugin")
-find_program(UWSGI_EXEC_PATH NAMES uwsgi)
-set (UWSGI_EXEC_PATH "uwsgi" CACHE FILEPATH "Path to the uWSGI executable")
-set (CUTELYST_PLUGINS_DIR "${CMAKE_INSTALL_PREFIX}/lib/cutelyst-plugins" CACHE PATH "Output directory for cutelyst plugins")
+set (CUTELYST_PLUGINS_DIR "${CMAKE_INSTALL_PREFIX}/lib/cutelyst2-plugins" CACHE PATH "Output directory for cutelyst plugins")
 set (DOXYGEN_TIMESTAMP "YES" CACHE STRING "Enables or disables the footer timestamp in API documentation. Allowed values: YES or NO")
 set (QHG_LOCATION "qhelpgenerator" CACHE FILEPATH "Path to the qhelpgenerator executable")
+set (MANDIR "${DATADIR}/man" CACHE PATH "Directory to install man pages")
+set (I18NDIR "${DATADIR}/cutelyst${PROJECT_VERSION_MAJOR}/translations" CACHE PATH "Directory to install translations")
 
 add_definitions("-DLOCALSTATEDIR=\"${LOCALSTATEDIR}\"")
 
@@ -112,17 +122,14 @@ add_definitions(
     -DQT_NO_URL_CAST_FROM_STRING
     -DQT_NO_CAST_FROM_BYTEARRAY
     -DQT_USE_QSTRINGBUILDER
+    -DQT_NO_SIGNALS_SLOTS_KEYWORDS
+    -DQT_USE_FAST_OPERATOR_PLUS
+    -DQT_DISABLE_DEPRECATED_BEFORE=0x051100
 )
 
-add_definitions(
-    -DQT_DISABLE_DEPRECATED_BEFORE=0x050800
-)
-
-if (NOT WIN32)
-add_definitions(
-    -std=c++11
-)
-endif()
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 include_directories(
     ${CMAKE_SOURCE_DIR}
@@ -132,20 +139,20 @@ include_directories(
 
 # cmake config files
 configure_file(${CMAKE_MODULE_PATH}/cutelystqt5-config.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/cutelystqt5-config.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/Cutelyst${PROJECT_VERSION_MAJOR}Qt5Config.cmake
     @ONLY
 )
 configure_file(${CMAKE_MODULE_PATH}/cutelystqt5-config-version.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/cutelystqt5-config-version.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/Cutelyst${PROJECT_VERSION_MAJOR}Qt5ConfigVersion.cmake
     @ONLY
 )
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/cutelystqt5-config.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/cutelystqt5-config-version.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cutelystqt5/
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/Cutelyst${PROJECT_VERSION_MAJOR}Qt5Config.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/Cutelyst${PROJECT_VERSION_MAJOR}Qt5ConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Cutelyst${PROJECT_VERSION_MAJOR}Qt5/
 )
-install(EXPORT CutelystQt5Targets
-    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/cutelystqt5/"
-    FILE CutelystQt5Targets.cmake
+install(EXPORT CutelystTargets
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Cutelyst${PROJECT_VERSION_MAJOR}Qt5/
+    FILE Cutelyst${PROJECT_VERSION_MAJOR}Qt5Targets.cmake
     NAMESPACE Cutelyst::
     COMPONENT Devel
 )
@@ -163,12 +170,20 @@ endif()
 
 add_subdirectory(wsgi)
 
-find_program(UWSGI_BIN NAMES uwsgi)
-if (UWSGI_EXEC_PATH)
+if (PLUGIN_UWSGI)
+    find_program(UWSGI_EXEC_PATH NAMES uwsgi)
+    set (UWSGI_EXEC_PATH "uwsgi" CACHE FILEPATH "Path to the uWSGI executable")
+    find_program(UWSGI_BIN NAMES uwsgi)
+    set (UWSGI_PLUGINS_DIR "${CMAKE_INSTALL_PREFIX}/lib/uwsgi/plugins" CACHE PATH "Output directory for uWSGI plugin")
     add_subdirectory(uwsgiEngine)
-endif()
+    message(STATUS "PLUGIN: uWSGI, enabled.")
+endif ()
 
 add_subdirectory(cmd)
+
+add_subdirectory(i18n)
+
+add_subdirectory(dox)
 
 if (BUILD_TESTS)
   add_subdirectory(tests)

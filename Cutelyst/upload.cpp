@@ -1,22 +1,20 @@
 /*
- * Copyright (C) 2014-2016 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2014-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #include "upload_p.h"
 #include "common.h"
 
@@ -72,7 +70,7 @@ bool Upload::save(const QString &newName)
                 break;
             totalRead += in;
             if (in != out.write(block, in)) {
-                setErrorString(QStringLiteral("Failure to write block"));
+                setErrorString(QLatin1String("Failure to write block"));
                 qCWarning(CUTELYST_UPLOAD) << errorString();
                 error = true;
                 break;
@@ -121,7 +119,7 @@ QTemporaryFile *Upload::createTemporaryFile(const QString &templateName)
                 break;
             totalRead += in;
             if (in != ret->write(block, in)) {
-                setErrorString(QStringLiteral("Failure to write block"));
+                setErrorString(QLatin1String("Failure to write block"));
                 qCWarning(CUTELYST_UPLOAD) << errorString();
                 error = true;
                 break;
@@ -143,7 +141,7 @@ QTemporaryFile *Upload::createTemporaryFile(const QString &templateName)
     Q_UNUSED(templateName)
 #endif
 
-    return 0;
+    return nullptr;
 }
 
 qint64 Upload::pos() const

@@ -2,21 +2,19 @@
  * Copyright (C) 2013-2017 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #ifndef CUTELYST_APPLICATION_H
 #define CUTELYST_APPLICATION_H
 
@@ -44,6 +42,7 @@ class DispatchType;
 class Request;
 class Response;
 class Engine;
+class EngineRequest;
 class Plugin;
 class Headers;
 class ApplicationPrivate;
@@ -122,7 +121,7 @@ public:
                 return p;
             }
         }
-        return 0;
+        return nullptr;
     }
 
     /**
@@ -186,6 +185,8 @@ public:
      * }
      * @endcode
      *
+     * @sa loadTranslations()
+     *
      * @since Cutelyst 1.5.0
      */
     void addTranslator(const QLocale &locale, QTranslator *translator);
@@ -222,6 +223,83 @@ public:
      * @since Cutelyst 1.5.0
      */
     QString translate(const QLocale &locale, const char *context, const char *sourceText, const char *disambiguation = nullptr, int n = -1) const;
+
+    /**
+     * Loads translations for a specific @a filename from a single directory.
+     *
+     * This can be used to load translations for a specific component if the translation file names follow a common schema.
+     * Let us assume you organised your translation files as follows:
+     * @li @c /usr/share/myapp/translations/myapp_de.qm
+     * @li @c /usr/share/myapp/translations/myapp_pt_BR.qm
+     * @li @c ...
+     *
+     * You can then use loadTranslations() in your reimplementation of Application::init() as follows:
+     * @code{.cpp}
+     * bool MyApp::init()
+     * {
+     *      loadTranslations(QStringLiteral("myapp"), QStringLiteral("/usr/share/myapp/translations"), QStringLiteral("_"));
+     * }
+     * @endcode
+     *
+     * If @a directory is empty, the default directory, set by <code>-DI18NDIR</code>, will be used. @a prefix is the part between
+     * the file name and the locale part. In the example above it is @c "_", if it is not set the default @c "." will be used. The
+     * @a suffix is the file name suffix that defaults to <code>".qm"</code>.
+     *
+     * @sa addTranslator(), loadTranslationsFromDir(), loadTranslationsFromDirs()
+     *
+     * @since Cuteylst 2.0.0
+     */
+    void loadTranslations(const QString &filename, const QString &directory = QString(), const QString &prefix = QString(), const QString &suffix = QString());
+
+    /**
+     * Loads translations for a specific @a filename from a single directory and returns a list of added locales.
+     *
+     * This can be used to load translations for a specific component if the translation file names follow a common schema.
+     * Let us assume you organised your translation files as follows:
+     * @li @c /usr/share/myapp/translations/myapp_de.qm
+     * @li @c /usr/share/myapp/translations/myapp_pt_BR.qm
+     * @li @c ...
+     *
+     * You can then use loadTranslationsFromDir() in your reimplementation of Application::init() as follows:
+     * @code{.cpp}
+     * bool MyApp::init()
+     * {
+     *      loadTranslationsFromDir(QStringLiteral("myapp"), QStringLiteral("/usr/share/myapp/translations"), QStringLiteral("_"));
+     * }
+     * @endcode
+     *
+     * If @a directory is empty, the default directory, set by <code>-DI18NDIR</code>, will be used. @a prefix is the part between
+     * the file name and the locale part. In the example above it is @c "_", if it is not set the default @c "." will be used. The
+     * @a suffix is the file name suffix that defaults to <code>".qm"</code>.
+     *
+     * @sa addTranslator(), loadTranslationsFromDirs()
+     *
+     * @since Cuteylst 2.1.0
+     */
+    QVector<QLocale> loadTranslationsFromDir(const QString &filename, const QString &directory = QString(), const QString &prefix = QStringLiteral("."), const QString &suffix = QStringLiteral(".qm"));
+
+    /**
+     * Loads translations for a specific @a filename from a directory structure under @a directory and returns a list of added locales.
+     *
+     * This can be used to load translations for a specific component or application if the the translation files are organized in
+     * subdirectories named after locale codes. Let us assume you organised your translation files as follows:
+     * @li @c /usr/share/locale/de/LC_MESSAGES/myapp.qm
+     * @li @c /usr/share/locale/pt_BR/LC_MESSAGES/myapp.qm
+     * @li @c ...
+     *
+     * You can then use loadTranslationsFromDirs() in your reimplementation of Application::init() as follows:
+     * @code{.cpp}
+     * bool MyApp::init()
+     * {
+     *     loadTranslationsFromDirs(QStringLiteral("/usr/share/locale"), QStringLiteral("LC_MESSAGES/myapp.qm"));
+     * }
+     * @endcode
+     *
+     * @sa addTranslator(), loadTranslationsFromDir()
+     *
+     * @since Cutelyst 2.1.0
+     */
+    QVector<QLocale> loadTranslationsFromDirs(const QString &directory, const QString &filename);
 
 protected:
     /**
@@ -346,6 +424,7 @@ protected:
     void setConfig(const QString &key, const QVariant &value);
 
     friend class Engine;
+    friend class Context;
 
     /*!
      * Called by the Engine to setup the internal data
@@ -355,13 +434,7 @@ protected:
     /*!
      * Called by the Engine to handle a new Request object
      */
-    Q_DECL_DEPRECATED
-    void handleRequest(Request *req);
-
-    /*!
-     * Called by the Engine to handle a new Request object
-     */
-    Context *handleRequest2(Request *req);
+    void handleRequest(Cutelyst::EngineRequest *request);
 
     /*!
      * Called by the Engine once post fork happened

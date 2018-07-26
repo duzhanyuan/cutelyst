@@ -1,33 +1,27 @@
 ﻿/*
- * Copyright (C) 2017 Matthias Fehring <kontakt@buschmann23.de>
+ * Copyright (C) 2017-2018 Matthias Fehring <kontakt@buschmann23.de>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
 #include "validatorfilled_p.h"
 
 using namespace Cutelyst;
 
-ValidatorFilled::ValidatorFilled(const QString &field, const QString &label, const QString &customError) :
-    ValidatorRule(*new ValidatorFilledPrivate(field, label, customError))
-{
-}
-
-ValidatorFilled::ValidatorFilled(ValidatorFilledPrivate &dd) :
-    ValidatorRule(dd)
+ValidatorFilled::ValidatorFilled(const QString &field, const Cutelyst::ValidatorMessages &messages, const QString &defValKey) :
+    ValidatorRule(*new ValidatorFilledPrivate(field, messages, defValKey))
 {
 }
 
@@ -35,24 +29,32 @@ ValidatorFilled::~ValidatorFilled()
 {
 }
 
-QString ValidatorFilled::validate() const
+ValidatorReturnType ValidatorFilled::validate(Context *c, const ParamsMultiMap &params) const
 {
-    QString result;
+    ValidatorReturnType result;
 
-    if (parameters().contains(field()) && value().isEmpty()) {
-        result = validationError();
+    if (params.contains(field())) {
+        const QString v = value(params);
+        if (!v.isEmpty()) {
+            result.value.setValue<QString>(v);
+        } else {
+            result.errorMessage = validationError(c);
+        }
+    } else {
+        defaultValue(c, &result, "ValidatorAfter");
     }
 
     return result;
 }
 
-QString ValidatorFilled::genericValidationError() const
+QString ValidatorFilled::genericValidationError(Context *c, const QVariant &errorData) const
 {
     QString error;
-    if (label().isEmpty()) {
-        error = QStringLiteral("Must be filled.");
+    const QString _label = label(c);
+    if (_label.isEmpty()) {
+        error = c->translate("Cutelyst::ValidatorFilled", "Must be filled.");
     } else {
-        error = QStringLiteral("You must fill in the “%1” field.").arg(label());
+        error = c->translate("Cutelyst::ValidatorFilled", "You must fill in the “%1” field.");
     }
     return error;
 }

@@ -1,22 +1,20 @@
 /*
- * Copyright (C) 2013-2015 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2017 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #ifndef AUTHENTICATIONREALM_H
 #define AUTHENTICATIONREALM_H
 
@@ -33,10 +31,14 @@ class CUTELYST_PLUGIN_AUTHENTICATION_EXPORT AuthenticationRealm : public Compone
 {
     Q_OBJECT
 public:
+    /*! default realm name */
+    static char *defaultRealm;
+
     /*!
      * Constructs a new AuthenticationRealm object with the given parent.
+     * \note This class will take ownership of store and credential.
      */
-    explicit AuthenticationRealm(AuthenticationStore *store, AuthenticationCredential *credential, QObject *parent = nullptr);
+    explicit AuthenticationRealm(AuthenticationStore *store, AuthenticationCredential *credential, const QString &name = QLatin1String(defaultRealm), QObject *parent = nullptr);
     virtual ~AuthenticationRealm();
 
     /*!
@@ -59,28 +61,23 @@ public:
      */
     virtual AuthenticationUser authenticate(Context *c, const ParamsMultiMap &authinfo);
 
-protected:
     /*!
      * Removes the user from the session
-     * TODO move out on Cutelyst2
      */
     void removePersistedUser(Context *c);
 
     /*!
      * Stores the user on the session
-     * TODO move out on Cutelyst2
      */
     AuthenticationUser persistUser(Context *c, const AuthenticationUser &user);
 
     /*!
      * Retrieves the user from the store
-     * TODO move out on Cutelyst2
      */
     AuthenticationUser restoreUser(Context *c, const QVariant &frozenUser);
 
     /*!
      * Checks if user can be retrieved
-     * TODO move out on Cutelyst2
      */
     QVariant userIsRestorable(Context *c);
 

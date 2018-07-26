@@ -1,30 +1,29 @@
 /*
- * Copyright (C) 2016-2017 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2016-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #include "wsgi_p.h"
 
 #include "protocol.h"
 #include "protocolhttp.h"
+#include "protocolhttp2.h"
 #include "protocolfastcgi.h"
 #include "cwsgiengine.h"
 #include "socket.h"
 #include "tcpserverbalancer.h"
-#include "tcpsslserver.h"
 #include "localserver.h"
 
 #ifdef Q_OS_UNIX
@@ -53,7 +52,7 @@
 
 #include <iostream>
 
-Q_LOGGING_CATEGORY(CUTELYST_WSGI, "wsgi")
+Q_LOGGING_CATEGORY(CUTELYST_WSGI, "wsgi", QtWarningMsg)
 
 using namespace CWSGI;
 using namespace Cutelyst;
@@ -62,11 +61,11 @@ WSGI::WSGI(QObject *parent) : QObject(parent),
     d_ptr(new WSGIPrivate(this))
 {
     if (qEnvironmentVariableIsEmpty("QT_MESSAGE_PATTERN")) {
-        qSetMessagePattern(QStringLiteral("%{pid}:%{threadid} %{category}[%{type}] %{message}"));
+        qSetMessagePattern(QLatin1String("%{pid}:%{threadid} %{category}[%{type}] %{message}"));
     }
 
 #ifdef Q_OS_LINUX
-    if (qEnvironmentVariableIsSet("CUTELYST_EVENT_LOOP_EPOLL")) {
+    if (!qEnvironmentVariableIsSet("CUTELYST_QT_EVENT_LOOP")) {
         std::cout << "Installing EPoll event loop" << std::endl;
         QCoreApplication::setEventDispatcher(new EventDispatcherEPoll);
     }
@@ -78,6 +77,7 @@ WSGI::~WSGI()
     Q_D(WSGI);
 
     delete d->protoHTTP;
+    delete d->protoHTTP2;
     delete d->protoFCGI;
 
     std::cout << "Cutelyst-WSGI terminated" << std::endl;
@@ -156,6 +156,24 @@ void WSGI::parseCommandLine(const QStringList &arguments)
                                      QCoreApplication::translate("main", "bind to the specified TCP socket using HTTP protocol"),
                                      QCoreApplication::translate("main", "address"));
     parser.addOption(httpSocketOpt);
+
+    QCommandLineOption http2SocketOpt({ QStringLiteral("http2-socket"), QStringLiteral("h2") },
+                                     QCoreApplication::translate("main", "bind to the specified TCP socket using HTTP/2 protocol"),
+                                     QCoreApplication::translate("main", "address"));
+    parser.addOption(http2SocketOpt);
+
+    QCommandLineOption http2HeaderTableSizeOpt(QStringLiteral("http2-header-table-size"),
+                                               QCoreApplication::translate("main", "Defined the HTTP/2 header table size"),
+                                               QCoreApplication::translate("main", "size"));
+    parser.addOption(http2HeaderTableSizeOpt);
+
+    QCommandLineOption upgradeH2cOpt(QStringLiteral("upgrade-h2c"),
+                                               QCoreApplication::translate("main", "Upgrades HTTP/1 to H2c (HTTP/2 Clear Text)"));
+    parser.addOption(upgradeH2cOpt);
+
+    QCommandLineOption httpsH2Opt(QStringLiteral("https-h2"),
+                                  QCoreApplication::translate("main", "Negotiate HTTP/2 on HTTPS socket"));
+    parser.addOption(httpsH2Opt);
 
     QCommandLineOption httpsSocketOpt({ QStringLiteral("https-socket"), QStringLiteral("hs1") },
                                       QCoreApplication::translate("main", "bind to the specified TCP socket using HTTPS protocol"),
@@ -421,6 +439,14 @@ void WSGI::parseCommandLine(const QStringList &arguments)
         setSoKeepalive(true);
     }
 
+    if (parser.isSet(upgradeH2cOpt)) {
+        setUpgradeH2c(true);
+    }
+
+    if (parser.isSet(httpsH2Opt)) {
+        setHttpsH2(true);
+    }
+
     if (parser.isSet(socketSndbuf)) {
         bool ok;
         auto size = parser.value(socketSndbuf).toInt(&ok);
@@ -448,7 +474,18 @@ void WSGI::parseCommandLine(const QStringList &arguments)
         }
     }
 
+    if (parser.isSet(http2HeaderTableSizeOpt)) {
+        bool ok;
+        auto size = parser.value(http2HeaderTableSizeOpt).toUInt(&ok);
+        setHttp2HeaderTableSize(size);
+        if (!ok || size < 1) {
+            parser.showHelp(1);
+        }
+    }
+
     setHttpSocket(httpSocket() + parser.values(httpSocketOpt));
+
+    setHttp2Socket(http2Socket() + parser.values(http2SocketOpt));
 
     setHttpsSocket(httpsSocket() + parser.values(httpsSocketOpt));
 
@@ -485,7 +522,7 @@ int WSGI::exec(Cutelyst::Application *app)
     if (d->processes == 0 && d->master) {
         d->processes = 1;
     }
-    d->genericFork = new UnixFork(d->processes, qMax(d->threads, 1), this);
+    d->genericFork = new UnixFork(d->processes, qMax(d->threads, 1), !d->userEventLoop, this);
 #else
     if (d->processes == -1) {
         d->processes = 1;
@@ -520,24 +557,26 @@ int WSGI::exec(Cutelyst::Application *app)
 
     d->writePidFile(d->pidfile);
 
-    bool isListeningLocalSockets = false;
 #ifdef Q_OS_UNIX
+    bool isListeningLocalSockets = false;
     if (!d->chownSocket.isEmpty()) {
         d->listenLocalSockets();
         isListeningLocalSockets = true;
     }
 
     if (!d->umask.isEmpty() &&
-            !UnixFork::setUmask(d->umask)) {
+            !UnixFork::setUmask(d->umask.toLatin1())) {
         return 1;
     }
 
     UnixFork::setGidUid(d->gid, d->uid, d->noInitgroups);
-#endif
 
     if (!isListeningLocalSockets) {
+#endif
         d->listenLocalSockets();
+#ifdef Q_OS_UNIX
     }
+#endif
 
     if (!d->servers.size()) {
         std::cout << "Please specify a socket to listen to" << std::endl;
@@ -559,46 +598,65 @@ int WSGI::exec(Cutelyst::Application *app)
         d->setupApplication();
     }
 
+    if (d->userEventLoop) {
+        d->postFork(0);
+        return 0;
+    }
+
     ret = d->genericFork->exec(d->lazy, d->master);
 
     return ret;
 }
 
+bool WSGI::start(Application *app)
+{
+    Q_D(WSGI);
+
+    d->processes = 0;
+    d->master = false;
+    d->lazy = false;
+    d->userEventLoop = true;
+#ifdef Q_OS_UNIX
+    d->uid = QString();
+    d->gid = QString();
+#endif
+    qputenv("CUTELYST_WSGI_IGNORE_MASTER", QByteArrayLiteral("1"));
+
+    if (exec(app) == 0) {
+        return true;
+    }
+
+    return false;
+}
+
+void WSGI::stop()
+{
+    Q_D(WSGI);
+    if (d->userEventLoop) {
+        Q_EMIT d->shutdown();
+    }
+}
+
 void WSGIPrivate::listenTcpSockets()
 {
-    Q_Q(WSGI);
-
-    if (!httpSockets.isEmpty()) {
-        if (!protoHTTP) {
-            protoHTTP = new ProtocolHttp(q);
-        }
-
-        const auto sockets = httpSockets;
-        for (const auto &socket : sockets) {
-            listenTcp(socket, protoHTTP, false);
-        }
+    const auto socketsH1 = httpSockets;
+    for (const auto &socket : socketsH1) {
+        listenTcp(socket, getHttpProto(), false);
     }
 
-    if (!httpsSockets.isEmpty()) {
-        if (!protoHTTP) {
-            protoHTTP = new ProtocolHttp(q);
-        }
-
-        const auto sockets = httpsSockets;
-        for (const auto &socket : sockets) {
-            listenTcp(socket, protoHTTP, true);
-        }
+    const auto socketsH1S = httpsSockets;
+    for (const auto &socket : socketsH1S) {
+        listenTcp(socket, getHttpProto(), true);
     }
 
-    if (!fastcgiSockets.isEmpty()) {
-        if (!protoFCGI) {
-            protoFCGI = new ProtocolFastCGI(q);
-        }
+    const auto socketsH2 = http2Sockets;
+    for (const auto &socket : socketsH2) {
+        listenTcp(socket, getHttp2Proto(), false);
+    }
 
-        const auto sockets = fastcgiSockets;
-        for (const auto &socket : sockets) {
-            listenTcp(socket, protoFCGI, false);
-        }
+    const auto socketsFCGI = fastcgiSockets;
+    for (const auto &socket : socketsFCGI) {
+        listenTcp(socket, getFastCgiProto(), false);
     }
 }
 
@@ -626,20 +684,13 @@ bool WSGIPrivate::listenTcp(const QString &line, Protocol *protocol, bool secure
 
 void WSGIPrivate::listenLocalSockets()
 {
-    Q_Q(WSGI);
-
-    QStringList http = httpsSockets;
+    QStringList http = httpSockets;
+    QStringList http2 = http2Sockets;
     QStringList fastcgi = fastcgiSockets;
 
-    if (!http.isEmpty() && !protoHTTP) {
-        protoHTTP = new ProtocolHttp(q);
-    }
-
-    if (!fastcgi.isEmpty() && !protoFCGI) {
-        protoFCGI = new ProtocolFastCGI(q);
-    }
-
 #ifdef Q_OS_LINUX
+    Q_Q(WSGI);
+
     std::vector<int> fds = systemdNotify::listenFds();
     for (int fd : fds) {
         auto server = new LocalServer(q, this);
@@ -649,9 +700,11 @@ void WSGIPrivate::listenLocalSockets()
 
             Protocol *protocol;
             if (http.removeOne(fullName) || http.removeOne(name)) {
-                protocol = protoHTTP;
+                protocol = getHttpProto();
+            } else if (http2.removeOne(fullName)  || http2.removeOne(name)) {
+                protocol = getHttp2Proto();
             } else if (fastcgi.removeOne(fullName)  || fastcgi.removeOne(name)) {
-                protocol = protoFCGI;
+                protocol = getFastCgiProto();
             } else {
                 qFatal("systemd activated socket does not match any configured socket");
             }
@@ -673,12 +726,17 @@ void WSGIPrivate::listenLocalSockets()
 
     const auto httpConst = http;
     for (const auto &socket : httpConst) {
-        listenLocal(socket, protoHTTP);
+        listenLocal(socket, getHttpProto());
+    }
+
+    const auto http2Const = http2;
+    for (const auto &socket : http2Const) {
+        listenLocal(socket, getHttp2Proto());
     }
 
     const auto fastcgiConst = fastcgi;
     for (const auto &socket : fastcgiConst) {
-        listenLocal(socket, protoFCGI);
+        listenLocal(socket, getFastCgiProto());
     }
 }
 
@@ -735,6 +793,7 @@ void WSGI::setApplication(const QString &application)
 {
     Q_D(WSGI);
     d->application = application;
+    Q_EMIT changed();
 }
 
 QString WSGI::application() const
@@ -749,8 +808,9 @@ void WSGI::setThreads(const QString &threads)
     if (threads.compare(QLatin1String("auto"), Qt::CaseInsensitive) == 0) {
         d->threads = -1;
     } else {
-        d->threads = threads.toInt();
+        d->threads = qMax(1, threads.toInt());
     }
+    Q_EMIT changed();
 }
 
 QString WSGI::threads() const
@@ -771,6 +831,7 @@ void WSGI::setProcesses(const QString &process)
     } else {
         d->processes = process.toInt();
     }
+    Q_EMIT changed();
 }
 
 QString WSGI::processes() const
@@ -787,6 +848,7 @@ void WSGI::setChdir(const QString &chdir)
 {
     Q_D(WSGI);
     d->chdir = chdir;
+    Q_EMIT changed();
 }
 
 QString WSGI::chdir() const
@@ -799,6 +861,7 @@ void WSGI::setHttpSocket(const QStringList &httpSocket)
 {
     Q_D(WSGI);
     d->httpSockets = httpSocket;
+    Q_EMIT changed();
 }
 
 QStringList WSGI::httpSocket() const
@@ -807,10 +870,63 @@ QStringList WSGI::httpSocket() const
     return d->httpSockets;
 }
 
+void WSGI::setHttp2Socket(const QStringList &http2Socket)
+{
+    Q_D(WSGI);
+    d->http2Sockets = http2Socket;
+    Q_EMIT changed();
+}
+
+QStringList WSGI::http2Socket() const
+{
+    Q_D(const WSGI);
+    return d->http2Sockets;
+}
+
+void WSGI::setHttp2HeaderTableSize(quint32 headerTableSize)
+{
+    Q_D(WSGI);
+    d->http2HeaderTableSize = headerTableSize;
+    Q_EMIT changed();
+}
+
+quint32 WSGI::http2HeaderTableSize() const
+{
+    Q_D(const WSGI);
+    return d->http2HeaderTableSize;
+}
+
+void WSGI::setUpgradeH2c(bool enable)
+{
+    Q_D(WSGI);
+    d->upgradeH2c = enable;
+    Q_EMIT changed();
+}
+
+bool WSGI::upgradeH2c() const
+{
+    Q_D(const WSGI);
+    return d->upgradeH2c;
+}
+
+void WSGI::setHttpsH2(bool enable)
+{
+    Q_D(WSGI);
+    d->httpsH2 = enable;
+    Q_EMIT changed();
+}
+
+bool WSGI::httpsH2() const
+{
+    Q_D(const WSGI);
+    return d->httpsH2;
+}
+
 void WSGI::setHttpsSocket(const QStringList &httpsSocket)
 {
     Q_D(WSGI);
     d->httpsSockets = httpsSocket;
+    Q_EMIT changed();
 }
 
 QStringList WSGI::httpsSocket() const
@@ -823,6 +939,7 @@ void WSGI::setFastcgiSocket(const QStringList &fastcgiSocket)
 {
     Q_D(WSGI);
     d->fastcgiSockets = fastcgiSocket;
+    Q_EMIT changed();
 }
 
 QStringList WSGI::fastcgiSocket() const
@@ -835,6 +952,7 @@ void WSGI::setSocketAccess(const QString &socketAccess)
 {
     Q_D(WSGI);
     d->socketAccess = socketAccess;
+    Q_EMIT changed();
 }
 
 QString WSGI::socketAccess() const
@@ -847,6 +965,7 @@ void WSGI::setSocketTimeout(int timeout)
 {
     Q_D(WSGI);
     d->socketTimeout = timeout;
+    Q_EMIT changed();
 }
 
 int WSGI::socketTimeout() const
@@ -859,6 +978,7 @@ void WSGI::setChdir2(const QString &chdir2)
 {
     Q_D(WSGI);
     d->chdir2 = chdir2;
+    Q_EMIT changed();
 }
 
 QString WSGI::chdir2() const
@@ -871,6 +991,7 @@ void WSGI::setIni(const QStringList &ini)
 {
     Q_D(WSGI);
     d->ini = ini;
+    Q_EMIT changed();
 }
 
 QStringList WSGI::ini() const
@@ -883,6 +1004,7 @@ void WSGI::setJson(const QStringList &files)
 {
     Q_D(WSGI);
     d->json = files;
+    Q_EMIT changed();
 }
 
 QStringList WSGI::json() const
@@ -895,6 +1017,7 @@ void WSGI::setStaticMap(const QStringList &staticMap)
 {
     Q_D(WSGI);
     d->staticMaps = staticMap;
+    Q_EMIT changed();
 }
 
 QStringList WSGI::staticMap() const
@@ -907,6 +1030,7 @@ void WSGI::setStaticMap2(const QStringList &staticMap)
 {
     Q_D(WSGI);
     d->staticMaps2 = staticMap;
+    Q_EMIT changed();
 }
 
 QStringList WSGI::staticMap2() const
@@ -921,6 +1045,7 @@ void WSGI::setMaster(bool enable)
     if (!qEnvironmentVariableIsSet("CUTELYST_WSGI_IGNORE_MASTER")) {
         d->master = enable;
     }
+    Q_EMIT changed();
 }
 
 bool WSGI::master() const
@@ -935,6 +1060,7 @@ void WSGI::setAutoReload(bool enable)
     if (enable) {
         d->autoReload = true;
     }
+    Q_EMIT changed();
 }
 
 bool WSGI::autoReload() const
@@ -947,6 +1073,7 @@ void WSGI::setTouchReload(const QStringList &files)
 {
     Q_D(WSGI);
     d->touchReload = files;
+    Q_EMIT changed();
 }
 
 QStringList WSGI::touchReload() const
@@ -963,6 +1090,7 @@ void WSGI::setBufferSize(qint64 size)
         return;
     }
     d->bufferSize = size;
+    Q_EMIT changed();
 }
 
 int WSGI::bufferSize() const
@@ -975,6 +1103,7 @@ void WSGI::setPostBuffering(qint64 size)
 {
     Q_D(WSGI);
     d->postBuffering = size;
+    Q_EMIT changed();
 }
 
 qint64 WSGI::postBuffering() const
@@ -991,6 +1120,7 @@ void WSGI::setPostBufferingBufsize(qint64 size)
         return;
     }
     d->postBufferingBufsize = size;
+    Q_EMIT changed();
 }
 
 qint64 WSGI::postBufferingBufsize() const
@@ -1003,6 +1133,7 @@ void WSGI::setTcpNodelay(bool enable)
 {
     Q_D(WSGI);
     d->tcpNodelay = enable;
+    Q_EMIT changed();
 }
 
 bool WSGI::tcpNodelay() const
@@ -1015,6 +1146,7 @@ void WSGI::setSoKeepalive(bool enable)
 {
     Q_D(WSGI);
     d->soKeepalive = enable;
+    Q_EMIT changed();
 }
 
 bool WSGI::soKeepalive() const
@@ -1027,6 +1159,7 @@ void WSGI::setSocketSndbuf(int value)
 {
     Q_D(WSGI);
     d->socketSendBuf = value;
+    Q_EMIT changed();
 }
 
 int WSGI::socketSndbuf() const
@@ -1039,6 +1172,7 @@ void WSGI::setSocketRcvbuf(int value)
 {
     Q_D(WSGI);
     d->socketReceiveBuf = value;
+    Q_EMIT changed();
 }
 
 int WSGI::socketRcvbuf() const
@@ -1051,6 +1185,7 @@ void WSGI::setWebsocketMaxSize(int value)
 {
     Q_D(WSGI);
     d->websocketMaxSize = value * 1024;
+    Q_EMIT changed();
 }
 
 int WSGI::websocketMaxSize() const
@@ -1063,6 +1198,7 @@ void WSGI::setPidfile(const QString &file)
 {
     Q_D(WSGI);
     d->pidfile = file;
+    Q_EMIT changed();
 }
 
 QString WSGI::pidfile() const
@@ -1075,6 +1211,7 @@ void WSGI::setPidfile2(const QString &file)
 {
     Q_D(WSGI);
     d->pidfile2 = file;
+    Q_EMIT changed();
 }
 
 QString WSGI::pidfile2() const
@@ -1088,6 +1225,7 @@ void WSGI::setUid(const QString &uid)
 {
     Q_D(WSGI);
     d->uid = uid;
+    Q_EMIT changed();
 }
 
 QString WSGI::uid() const
@@ -1100,6 +1238,7 @@ void WSGI::setGid(const QString &gid)
 {
     Q_D(WSGI);
     d->gid = gid;
+    Q_EMIT changed();
 }
 
 QString WSGI::gid() const
@@ -1112,6 +1251,7 @@ void WSGI::setNoInitgroups(bool enable)
 {
     Q_D(WSGI);
     d->noInitgroups = enable;
+    Q_EMIT changed();
 }
 
 bool WSGI::noInitgroups() const
@@ -1124,6 +1264,7 @@ void WSGI::setChownSocket(const QString &chownSocket)
 {
     Q_D(WSGI);
     d->chownSocket = chownSocket;
+    Q_EMIT changed();
 }
 
 QString WSGI::chownSocket() const
@@ -1136,6 +1277,7 @@ void WSGI::setUmask(const QString &value)
 {
     Q_D(WSGI);
     d->umask = value;
+    Q_EMIT changed();
 }
 
 QString WSGI::umask() const
@@ -1148,6 +1290,7 @@ void WSGI::setCpuAffinity(int value)
 {
     Q_D(WSGI);
     d->cpuAffinity = value;
+    Q_EMIT changed();
 }
 
 int WSGI::cpuAffinity() const
@@ -1162,6 +1305,7 @@ void WSGI::setReusePort(bool enable)
 {
     Q_D(WSGI);
     d->reusePort = enable;
+    Q_EMIT changed();
 }
 
 bool WSGI::reusePort() const
@@ -1175,6 +1319,7 @@ void WSGI::setLazy(bool enable)
 {
     Q_D(WSGI);
     d->lazy = enable;
+    Q_EMIT changed();
 }
 
 bool WSGI::lazy() const
@@ -1214,14 +1359,13 @@ void WSGIPrivate::setupApplication()
     }
 
     if (!chdir2.isEmpty()) {
-        std::cout << "Changing directory2 to: " << chdir2.toLatin1().constData()  << std::endl;;
+        std::cout << "Changing directory2 to: " << chdir2.toLatin1().constData()  << std::endl;
         if (!QDir::setCurrent(chdir2)) {
             qFatal("Failed to chdir2 to: '%s'", chdir2.toLatin1().constData());
         }
     }
 
-    std::cout << "Threads:" << threads << std::endl;
-    if (threads) {
+    if (threads > 1) {
         engine = createEngine(localApp, 0);
         for (int i = 1; i < threads; ++i) {
             if (createEngine(localApp, i)) {
@@ -1233,7 +1377,8 @@ void WSGIPrivate::setupApplication()
     }
 
     if (!engine) {
-        qFatal("Main engine failed to init");
+        std::cerr << "Application failed to init, cheaping..." << std::endl;
+        exit(15);
     }
 }
 
@@ -1248,7 +1393,14 @@ void WSGIPrivate::engineShutdown(CWsgiEngine *engine)
     }
 
     if (engines.empty()) {
-        QTimer::singleShot(0, qApp, &QCoreApplication::quit);
+        if (userEventLoop) {
+            Q_Q(WSGI);
+            Q_EMIT q->stopped();
+        } else {
+            QTimer::singleShot(0, this, [] {
+                qApp->exit(15);
+            });
+        }
     }
 }
 
@@ -1276,7 +1428,7 @@ void WSGIPrivate::postFork(int workerId)
         QThread *thread = engine->thread();
         if (thread != qApp->thread()) {
 #ifdef Q_OS_LINUX
-            if (qEnvironmentVariableIsSet("CUTELYST_EVENT_LOOP_EPOLL")) {
+            if (!qEnvironmentVariableIsSet("CUTELYST_QT_EVENT_LOOP")) {
                 thread->setEventDispatcher(new EventDispatcherEPoll);
             }
 #endif
@@ -1326,14 +1478,14 @@ CWsgiEngine *WSGIPrivate::createEngine(Application *app, int core)
     engine->setConfig(config);
     engine->setServers(servers);
     if (!engine->init()) {
-        qCCritical(CUTELYST_WSGI) << "Failed to init engine for core:" << core;
+        std::cerr << "Application failed to init(), cheaping core: " << core << std::endl;
         delete engine;
         return nullptr;
     }
 
     engines.push_back(engine);
 
-    if (threads) {
+    if (threads > 1) {
         auto thread = new QThread(this);
         engine->moveToThread(thread);
     } else {
@@ -1419,4 +1571,36 @@ void WSGIPrivate::applyConfig(const QVariantMap &config)
     }
 }
 
+Protocol *WSGIPrivate::getHttpProto()
+{
+    Q_Q(WSGI);
+    if (!protoHTTP) {
+        if (upgradeH2c) {
+            protoHTTP = new ProtocolHttp(q, getHttp2Proto());
+        } else {
+            protoHTTP = new ProtocolHttp(q);
+        }
+    }
+    return protoHTTP;
+}
+
+ProtocolHttp2 *WSGIPrivate::getHttp2Proto()
+{
+    Q_Q(WSGI);
+    if (!protoHTTP2) {
+        protoHTTP2 = new ProtocolHttp2(q);
+    }
+    return protoHTTP2;
+}
+
+Protocol *WSGIPrivate::getFastCgiProto()
+{
+    Q_Q(WSGI);
+    if (!protoFCGI) {
+        protoFCGI = new ProtocolFastCGI(q);
+    }
+    return protoFCGI;
+}
+
 #include "moc_wsgi.cpp"
+#include "moc_wsgi_p.cpp"

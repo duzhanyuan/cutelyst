@@ -1,23 +1,23 @@
 /*
- * Copyright (C) 2013-2017 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #include "engine_p.h"
+
+#include "context_p.h"
 
 #include "common.h"
 #include "request_p.h"
@@ -59,8 +59,7 @@ Engine::Engine(Cutelyst::Application *app, int workerCore, const QVariantMap &op
 {
     Q_D(Engine);
 
-    // Debug messages should be disabled by default
-    QLoggingCategory::setFilterRules(QLatin1String("cutelyst.*.debug=false"));
+    connect(this, &Engine::processRequestAsync, this, &Engine::processRequest, Qt::QueuedConnection);
 
     d->opts = opts;
     d->workerCore = workerCore;
@@ -85,89 +84,6 @@ Engine::Engine(Cutelyst::Application *app, int workerCore, const QVariantMap &op
 Engine::~Engine()
 {
     delete d_ptr;
-}
-
-void Engine::finalizeCookies(Context *c)
-{
-    Response *res = c->response();
-    Headers &headers = res->headers();
-    const auto cookies = res->cookies();
-    for (const QNetworkCookie &cookie : cookies) {
-        headers.pushHeader(QStringLiteral("set_cookie"), QString::fromLatin1(cookie.toRawForm()));
-    }
-}
-
-bool Engine::finalizeHeaders(Context *c)
-{
-    Response *response = c->response();
-    quint16 status = response->status();
-    Headers &headers = response->headers();
-
-    // Fix missing content length
-    if (headers.contentLength() < 0) {
-        qint64 size = response->size();
-        if (size >= 0) {
-            headers.setContentLength(size);
-        }
-    }
-
-    finalizeCookies(c);
-
-    // Done
-    response->d_ptr->flags |= ResponsePrivate::FinalizedHeaders;
-    return finalizeHeadersWrite(c, status, headers, c->request()->engineData());
-}
-
-void Engine::finalizeBody(Context *c)
-{
-    Response *response = c->response();
-    void *engineData = c->engineData();
-
-    if (!(response->d_ptr->flags & ResponsePrivate::Chunked)) {
-        QIODevice *body = response->bodyDevice();
-
-        if (body) {
-            body->seek(0);
-            char block[64 * 1024];
-            while (!body->atEnd()) {
-                qint64 in = body->read(block, sizeof(block));
-                if (in <= 0) {
-                    break;
-                }
-
-                if (write(c, block, in, engineData) != in) {
-                    qCWarning(CUTELYST_ENGINE) << "Failed to write body";
-                    break;
-                }
-            }
-        } else {
-            const QByteArray bodyByteArray = response->body();
-            write(c, bodyByteArray.constData(), bodyByteArray.size(), engineData);
-        }
-    } else if (!(response->d_ptr->flags & ResponsePrivate::ChunkedDone)) {
-        // Write the final '0' chunk
-        doWrite(c, "0\r\n\r\n", 5, engineData);
-    }
-}
-
-void Engine::finalizeError(Context *c)
-{
-    Response *res = c->response();
-
-    res->setContentType(QStringLiteral("text/html; charset=utf-8"));
-
-    QByteArray body;
-
-    // Trick IE. Old versions of IE would display their own error page instead
-    // of ours if we'd give it less than 512 bytes.
-    body.reserve(512);
-
-    body.append(c->errors().join(QLatin1Char('\n')).toUtf8());
-
-    res->setBody(body);
-
-    // Return 500
-    res->setStatus(Response::InternalServerError);
 }
 
 /**
@@ -240,30 +156,6 @@ bool Engine::postForkApplication()
 quint64 Engine::time()
 {
     return QDateTime::currentMSecsSinceEpoch() * 1000;
-}
-
-qint64 Engine::write(Context *c, const char *data, qint64 len, void *engineData)
-{
-    Response *response = c->response();
-    if (!(response->d_ptr->flags & ResponsePrivate::Chunked)) {
-        return doWrite(c, data, len, engineData);
-    } else if (!(response->d_ptr->flags & ResponsePrivate::ChunkedDone)) {
-        const QByteArray chunkSize = QByteArray::number(len, 16).toUpper();
-        QByteArray chunk;
-        chunk.reserve(len + chunkSize.size() + 4);
-        chunk.append(chunkSize).append("\r\n", 2)
-                .append(data, len).append("\r\n", 2);
-
-        qint64 retWrite = doWrite(c, chunk.data(), chunk.size(), engineData);
-
-        // Flag if we wrote an empty chunk
-        if (!len) {
-            response->d_ptr->flags |= ResponsePrivate::ChunkedDone;
-        }
-
-        return retWrite == chunk.size() ? len : -1;
-    }
-    return -1;
 }
 
 const char *Engine::httpStatusMessage(quint16 status, int *len)
@@ -384,6 +276,9 @@ const char *Engine::httpStatusMessage(quint16 status, int *len)
     case Response::ServiceUnavailable:
         ret = "HTTP/1.1 503 Service Unavailable";
         break;
+    case Response::MultiStatus:
+        ret = "HTTP/1.1 207 Multi-Status";
+        break;
     case Response::GatewayTimeout:
         ret = "HTTP/1.1 504 Gateway Timeout";
         break;
@@ -410,17 +305,13 @@ Headers &Engine::defaultHeaders()
     return d->app->defaultHeaders();
 }
 
-Context *Engine::processRequest2(const EngineRequest &req)
+void Engine::processRequest(EngineRequest *request)
 {
     Q_D(Engine);
 
-    auto request = new Request(new RequestPrivate(req, this));
-    return d->app->handleRequest2(request);
-}
+    d->app->handleRequest(request);
 
-void Engine::processRequest(const EngineRequest &req)
-{
-    delete processRequest2(req);
+    request->processingFinished();
 }
 
 QVariantMap Engine::opts() const
@@ -477,108 +368,6 @@ QVariantMap Engine::loadJsonConfig(const QString &filename)
     ret = doc.toVariant().toMap();
 
     return ret;
-}
-
-void Engine::finalize(Context *c)
-{
-    if (c->error()) {
-        finalizeError(c);
-    }
-
-    if (!(c->response()->d_ptr->flags & ResponsePrivate::FinalizedHeaders) && !finalizeHeaders(c)) {
-        return;
-    }
-
-    finalizeBody(c);
-}
-
-bool Engine::webSocketHandshake(Context *c, const QString &key, const QString &origin, const QString &protocol)
-{
-    ResponsePrivate *priv = c->response()->d_ptr;
-    if (priv->flags & ResponsePrivate::FinalizedHeaders) {
-        return false;
-    }
-
-    if (webSocketHandshakeDo(c, key, origin, protocol, c->engineData())) {
-        priv->flags |= ResponsePrivate::FinalizedHeaders;
-        return true;
-    }
-
-    return false;
-}
-
-bool Engine::webSocketHandshakeDo(Context *c, const QString &key, const QString &origin, const QString &protocol, void *engineData)
-{
-    Q_UNUSED(c)
-    Q_UNUSED(key)
-    Q_UNUSED(origin)
-    Q_UNUSED(protocol)
-    Q_UNUSED(engineData)
-    return false;
-}
-
-bool Engine::webSocketSendTextMessage(Context *c, const QString &message)
-{
-    Q_UNUSED(c)
-    Q_UNUSED(message)
-    return false;
-}
-
-bool Engine::webSocketSendBinaryMessage(Context *c, const QByteArray &message)
-{
-    Q_UNUSED(c)
-    Q_UNUSED(message)
-    return false;
-}
-
-bool Engine::webSocketSendPing(Context *c, const QByteArray &payload)
-{
-    Q_UNUSED(c)
-    Q_UNUSED(payload)
-    return false;
-}
-
-bool Engine::webSocketClose(Context *c, quint16 code, const QString &reason)
-{
-    Q_UNUSED(c)
-    Q_UNUSED(code)
-    Q_UNUSED(reason)
-    return false;
-}
-
-void Engine::processRequest(const QString &method,
-                            const QString &path,
-                            const QByteArray &query,
-                            const QString &protocol,
-                            bool isSecure,
-                            const QString &serverAddress,
-                            const QHostAddress &remoteAddress,
-                            quint16 remotePort,
-                            const QString &remoteUser,
-                            const Headers &headers,
-                            quint64 startOfRequest,
-                            QIODevice *body,
-                            void *requestPtr)
-{
-    Q_D(Engine);
-
-    EngineRequest req;
-    req.method = method;
-    req.path = path;
-    req.query = query;
-    req.protocol = protocol;
-    req.isSecure = isSecure;
-    req.serverAddress = serverAddress;
-    req.remoteAddress = remoteAddress;
-    req.remotePort = remotePort;
-    req.remoteUser = remoteUser;
-    req.headers = headers;
-    req.startOfRequest = startOfRequest;
-    req.body = body;
-    req.requestPtr = requestPtr;
-
-    auto request = new Request(new RequestPrivate(req, this));
-    delete d->app->handleRequest2(request);
 }
 
 #include "moc_engine.cpp"

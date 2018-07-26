@@ -3,7 +3,6 @@
 #include <QMimeDatabase>
 #include <QDir>
 #include <QDirIterator>
-#include <QDebug>
 
 Helper::Helper(QObject *parent) : QObject(parent)
 {
@@ -46,3 +45,5 @@ QString Helper::findApplication(const QDir &projectDir)
     }
     return QString();
 }
+
+#include "moc_helper.cpp"

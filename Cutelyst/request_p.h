@@ -1,22 +1,20 @@
 /*
- * Copyright (C) 2013 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2017 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #ifndef CUTELYST_REQUEST_P_H
 #define CUTELYST_REQUEST_P_H
 
@@ -28,7 +26,6 @@
 #include <QtCore/QUrlQuery>
 #include <QtCore/QUrl>
 #include <QtNetwork/QHostAddress>
-
 
 namespace Cutelyst {
 
@@ -42,12 +39,9 @@ public:
         BaseParsed = 0x02,
         CookiesParsed = 0x04,
         QueryParsed = 0x08,
-        BodyParsed = 0x10,
-        ParamParsed = 0x20,
+        BodyParsed = 0x10
     };
     Q_DECLARE_FLAGS(ParserStatus, ParserStatusFlag)
-
-    RequestPrivate(const EngineRequest &req, Engine *_engine);
 
     inline void parseUrlQuery() const;
     inline void parseBody() const;
@@ -56,23 +50,9 @@ public:
     static inline ParamsMultiMap parseUrlEncoded(const QByteArray &line);
     static inline QVariantMap paramsMultiMapToVariantMap(const ParamsMultiMap &params);
 
-    // Manually filled by the Engine
-    Engine *engine;
-    QString method;
-    // Path must not have a leading slash
-    QString path;
-    QByteArray query;
-    QString protocol;
-    QString serverAddress;
-    QHostAddress remoteAddress;
-    QString remoteUser;
-    Headers headers;
-    QIODevice *body = nullptr;
-    mutable QString remoteHostname;
-    quint64 startOfRequest;
-    quint64 endOfRequest;
     // Pointer to Engine data
-    void *requestPtr = nullptr;
+    Engine *engine;
+    EngineRequest *engineRequest = nullptr;
 
     // Engines don't need to touch this
     QStringList args;
@@ -86,13 +66,10 @@ public:
     mutable QString queryKeywords;
     mutable ParamsMultiMap bodyParam;
     mutable QVariant bodyData;
-    mutable ParamsMultiMap param;
+    mutable QString remoteHostname;
     mutable QMap<QString, Upload *> uploadsMap;
     mutable QVector<Upload *> uploads;
     mutable ParserStatus parserStatus = NotParsed;
-
-    quint16 remotePort;
-    bool https = false;
 };
 
 }

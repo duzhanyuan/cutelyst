@@ -15,29 +15,72 @@ clone_folder: c:\dev\cutelyst
 environment:
   matrix:
   - CMAKE_GENERATOR: "Ninja"
-    QT5: C:\Qt\5.7\msvc2015
+    QT5: C:\Qt\5.9\msvc2015
     PLATFORM: X86
     VSVER: 14
     ENABLE_MAINTAINER_CFLAGS: off
   - CMAKE_GENERATOR: "Ninja"
-    QT5: C:\Qt\5.7\msvc2015_64
+    QT5: C:\Qt\5.9\msvc2015_64
     PLATFORM: X64
     VSVER: 14
     ENABLE_MAINTAINER_CFLAGS: off
   - CMAKE_GENERATOR: "Visual Studio 14"
-    QT5: C:\Qt\5.7\msvc2015
+    QT5: C:\Qt\5.9\msvc2015
     PLATFORM: X86
     VSVER: 14
     ENABLE_MAINTAINER_CFLAGS: off
   - CMAKE_GENERATOR: "Visual Studio 14 Win64"
-    QT5: C:\Qt\5.7\msvc2015_64
+    QT5: C:\Qt\5.9\msvc2015_64
+    PLATFORM: X64
+    VSVER: 14
+    ENABLE_MAINTAINER_CFLAGS: off
+  - CMAKE_GENERATOR: "Visual Studio 15 2017 Win64"
+    APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
+    QT5: C:\Qt\5.9\msvc2017_64
+    PLATFORM: X64
+    VSVER: 17
+    ENABLE_MAINTAINER_CFLAGS: off
+  - CMAKE_GENERATOR: "MinGW Makefiles"
+    QT5: C:\Qt\5.9\mingw53_32
+    MINGW_PATH: C:\Qt\Tools\mingw530_32
+    ENABLE_MAINTAINER_CFLAGS: on
+
+  - CMAKE_GENERATOR: "Ninja"
+    QT5: C:\Qt\5.10\msvc2015
+    PLATFORM: X86
+    VSVER: 14
+    ENABLE_MAINTAINER_CFLAGS: off
+  - CMAKE_GENERATOR: "Ninja"
+    QT5: C:\Qt\5.10\msvc2015_64
+    PLATFORM: X64
+    VSVER: 14
+    ENABLE_MAINTAINER_CFLAGS: off
+  - CMAKE_GENERATOR: "Visual Studio 14"
+    QT5: C:\Qt\5.10\msvc2015
+    PLATFORM: X86
+    VSVER: 14
+    ENABLE_MAINTAINER_CFLAGS: off
+  - CMAKE_GENERATOR: "Visual Studio 14 Win64"
+    QT5: C:\Qt\5.10\msvc2015_64
     PLATFORM: X64
     VSVER: 14
     ENABLE_MAINTAINER_CFLAGS: off
   - CMAKE_GENERATOR: "MinGW Makefiles"
-    QT5: C:\Qt\5.7\mingw53_32
+    QT5: C:\Qt\5.10\mingw53_32
     MINGW_PATH: C:\Qt\Tools\mingw530_32
     ENABLE_MAINTAINER_CFLAGS: on
+
+  - CMAKE_GENERATOR: "Ninja"
+    QT5: C:\Qt\5.10\msvc2017_64
+    PLATFORM: X64
+    VSVER: 17
+    ENABLE_MAINTAINER_CFLAGS: off
+  - CMAKE_GENERATOR: "Visual Studio 15 2017 Win64"
+    APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
+    QT5: C:\Qt\5.10\msvc2017_64
+    PLATFORM: X64
+    VSVER: 17
+    ENABLE_MAINTAINER_CFLAGS: off
 
   - CMAKE_GENERATOR: "Ninja"
     QT5: C:\Qt\5.6\msvc2015
@@ -99,7 +142,15 @@ build_script:
   - cd c:\dev\cutelyst
   - md build
   - cd build
-  - cmake .. -G "%CMAKE_GENERATOR%" "-DCMAKE_PREFIX_PATH=%QT5%" "-DENABLE_MAINTAINER_CFLAGS=%ENABLE_MAINTAINER_CFLAGS%"
+  - cmake .. -G "%CMAKE_GENERATOR%" "-DCMAKE_PREFIX_PATH=%QT5%" "-DENABLE_MAINTAINER_CFLAGS=%ENABLE_MAINTAINER_CFLAGS%" -DBUILD_ALL=on
+    -DPLUGIN_VIEW_EMAIL=off
+    -DPLUGIN_VIEW_GRANTLEE=off
+    -DPLUGIN_VIEW_CLEARSILVER=off
+    -DPLUGIN_MEMCACHED=off
+    -DPLUGIN_MEMCACHEDSESSIONSTORE=off
+    -DPLUGIN_UWSGI=off
+    -DPLUGIN_VALIDATOR_PWQUALITY=off
+    -DUSE_JEMALLOC=off
   - cmake --build . --config Debug
   - cmake --build . --config Release
 

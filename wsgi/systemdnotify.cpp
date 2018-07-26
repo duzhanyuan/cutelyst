@@ -1,20 +1,19 @@
 /*
- * Copyright (C) 2017 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2017-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #include "systemdnotify.h"
 
@@ -29,10 +28,12 @@
 #include <fcntl.h>
 
 #include <QCoreApplication>
-#include <QDebug>
+#include <QLoggingCategory>
 
 /* The first passed file descriptor is fd 3 */
 #define SD_LISTEN_FDS_START 3
+
+Q_LOGGING_CATEGORY(WSGI_SYSTEMD, "wsgi.systemd", QtWarningMsg)
 
 using namespace CWSGI;
 
@@ -57,7 +58,7 @@ systemdNotify::systemdNotify(const char *systemd_socket, QObject *parent) : QObj
 
     d->notification_fd = socket(AF_UNIX, SOCK_DGRAM, 0);
     if (d->notification_fd < 0) {
-        qWarning("socket()");
+        qCWarning(WSGI_SYSTEMD, "socket()");
         return;
     }
 
@@ -112,7 +113,7 @@ void systemdNotify::notify(const QByteArray &data)
     msghdr->msg_iovlen = 3;
 
     if (sendmsg(d->notification_fd, msghdr, 0) < 0) {
-        qWarning("sendmsg()");
+        qCWarning(WSGI_SYSTEMD, "sendmsg()");
     }
 }
 
@@ -130,7 +131,7 @@ void systemdNotify::ready()
     msghdr->msg_iovlen = 1;
 
     if (sendmsg(d->notification_fd, msghdr, 0) < 0) {
-        qWarning("sendmsg()");
+        qCWarning(WSGI_SYSTEMD, "sendmsg()");
     }
 }
 
@@ -141,7 +142,7 @@ void systemdNotify::install_systemd_notifier(WSGI *wsgi)
     }
 
     const QByteArray notifySocket = qgetenv("NOTIFY_SOCKET");
-    qDebug() << "systemd notify detected" << notifySocket;
+    qInfo(WSGI_SYSTEMD) << "systemd notify detected" << notifySocket;
     auto notify = new systemdNotify(notifySocket.constData(), wsgi);
     connect(wsgi, &WSGI::ready, notify, &systemdNotify::ready);
 }
@@ -194,7 +195,7 @@ int sd_listen_fds()
         return  -EINVAL;
     }
 
-    qDebug("systemd socket activation detected");
+    qCInfo(WSGI_SYSTEMD, "systemd socket activation detected");
 
     int r = 0;
     for (int fd = SD_LISTEN_FDS_START; fd < SD_LISTEN_FDS_START + n; fd ++) {

@@ -1,22 +1,20 @@
 /*
- * Copyright (C) 2015-2017 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2015-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #ifndef VIEWEMAIL_H
 #define VIEWEMAIL_H
 
@@ -33,10 +31,10 @@ class ViewEmailPrivate;
 class CUTELYST_VIEW_EMAIL_EXPORT ViewEmail : public Cutelyst::View
 {
     Q_OBJECT
-    Q_PROPERTY(QString stashKey READ stashKey WRITE setStashKey)
-    Q_PROPERTY(QByteArray defaultContentType READ defaultContentType WRITE setDefaultContentType)
-    Q_PROPERTY(QByteArray defaultCharset READ defaultCharset WRITE setDefaultCharset)
-    Q_PROPERTY(QByteArray defaultEncoding READ defaultEncoding WRITE setDefaultEncoding)
+    Q_PROPERTY(QString stashKey READ stashKey WRITE setStashKey NOTIFY changed)
+    Q_PROPERTY(QByteArray defaultContentType READ defaultContentType WRITE setDefaultContentType NOTIFY changed)
+    Q_PROPERTY(QByteArray defaultCharset READ defaultCharset WRITE setDefaultCharset NOTIFY changed)
+    Q_PROPERTY(QByteArray defaultEncoding READ defaultEncoding WRITE setDefaultEncoding NOTIFY changed)
 public:
     /**  This value defines which kind of connection should be used */
     enum ConnectionType
@@ -181,6 +179,9 @@ protected:
 
     Q_DECLARE_PRIVATE(ViewEmail)
     ViewEmailPrivate *d_ptr;
+
+Q_SIGNALS:
+    void changed();
 
 private:
     void initSender();

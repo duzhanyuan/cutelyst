@@ -1,22 +1,20 @@
 /*
- * Copyright (C) 2013-2017 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #include "grantleeview_p.h"
 
 #include "application.h"
@@ -30,8 +28,9 @@
 #include <QString>
 #include <QDirIterator>
 #include <QtCore/QLoggingCategory>
+#include <QTranslator>
 
-Q_LOGGING_CATEGORY(CUTELYST_GRANTLEE, "cutelyst.grantlee")
+Q_LOGGING_CATEGORY(CUTELYST_GRANTLEE, "cutelyst.grantlee", QtWarningMsg)
 
 using namespace Cutelyst;
 
@@ -55,6 +54,8 @@ GrantleeView::GrantleeView(QObject *parent, const QString &name) : View(parent, 
         // If CUTELYST_VAR is set the template might have become
         // {{ Cutelyst.req.base }} instead of {{ c.req.base }}
         d->cutelystVar = app->config(QStringLiteral("CUTELYST_VAR"), QStringLiteral("c")).toString();
+
+        app->loadTranslations(QStringLiteral("plugin_view_grantlee"));
     } else {
         // make sure templates can be found on the current directory
         setIncludePaths({ QDir::currentPath() });
@@ -77,6 +78,7 @@ void GrantleeView::setIncludePaths(const QStringList &paths)
     Q_D(GrantleeView);
     d->loader->setTemplateDirs(paths);
     d->includePaths = paths;
+    Q_EMIT changed();
 }
 
 QString GrantleeView::templateExtension() const
@@ -89,6 +91,7 @@ void GrantleeView::setTemplateExtension(const QString &extension)
 {
     Q_D(GrantleeView);
     d->extension = extension;
+    Q_EMIT changed();
 }
 
 QString GrantleeView::wrapper() const
@@ -101,6 +104,7 @@ void GrantleeView::setWrapper(const QString &name)
 {
     Q_D(GrantleeView);
     d->wrapper = name;
+    Q_EMIT changed();
 }
 
 void GrantleeView::setCache(bool enable)
@@ -121,6 +125,7 @@ void GrantleeView::setCache(bool enable)
         d->cache.clear();
         d->engine->addTemplateLoader(d->loader);
     }
+    Q_EMIT changed();
 }
 
 Grantlee::Engine *GrantleeView::engine() const
@@ -209,6 +214,12 @@ QByteArray GrantleeView::render(Context *c) const
     gc.setLocalizer(localizer);
 
     Grantlee::Template tmpl = d->engine->loadByName(templateFile);
+    if (tmpl->error() != Grantlee::NoError) {
+        c->res()->setBody(c->translate("Cutelyst::GrantleeView", "Internal server error."));
+        c->error(QLatin1String("Error while rendering template: ") + tmpl->errorString());
+        return ret;
+    }
+
     QString content = tmpl->render(&gc);
     if (tmpl->error() != Grantlee::NoError) {
         c->res()->setBody(c->translate("Cutelyst::GrantleeView", "Internal server error."));
@@ -218,6 +229,12 @@ QByteArray GrantleeView::render(Context *c) const
 
     if (!d->wrapper.isEmpty()) {
         Grantlee::Template wrapper = d->engine->loadByName(d->wrapper);
+        if (tmpl->error() != Grantlee::NoError) {
+            c->res()->setBody(c->translate("Cutelyst::GrantleeView", "Internal server error."));
+            c->error(QLatin1String("Error while rendering template: ") + tmpl->errorString());
+            return ret;
+        }
+
         Grantlee::SafeString safeContent(content, true);
         gc.insert(QStringLiteral("content"), safeContent);
         content = wrapper->render(&gc);
@@ -258,6 +275,52 @@ void GrantleeView::addTranslationCatalogs(const QHash<QString, QString> &catalog
     Q_D(GrantleeView);
     Q_ASSERT_X(!catalogs.empty(), "add translation catalogs to GranteleeView", "empty QHash");
     d->translationCatalogs.unite(catalogs);
+}
+
+QVector<QLocale> GrantleeView::loadTranslationsFromDir(const QString &filename, const QString &directory, const QString &prefix, const QString &suffix)
+{
+    QVector<QLocale> locales;
+
+    if (Q_LIKELY(!filename.isEmpty() && !directory.isEmpty())) {
+        const QDir i18nDir(directory);
+        if (Q_LIKELY(i18nDir.exists())) {
+            const QString _prefix = prefix.isEmpty() ? QStringLiteral(".") : prefix;
+            const QString _suffix = suffix.isEmpty() ? QStringLiteral(".qm") : suffix;
+            const QStringList namesFilter = QStringList({filename + _prefix + QLatin1Char('*') + _suffix});
+            const QFileInfoList tsFiles = i18nDir.entryInfoList(namesFilter, QDir::Files);
+            if (Q_LIKELY(!tsFiles.empty())) {
+                locales.reserve(tsFiles.size());
+                for (const QFileInfo &ts : tsFiles) {
+                    const QString fn = ts.fileName();
+                    const int prefIdx = fn.indexOf(_prefix);
+                    const QString locString = fn.mid(prefIdx + _prefix.length(), fn.length() - prefIdx - _suffix.length() - _prefix.length());
+                    QLocale loc(locString);
+                    if (Q_LIKELY(loc.language() != QLocale::C)) {
+                        auto trans = new QTranslator(this);
+                        if (Q_LIKELY(trans->load(loc, filename, _prefix, directory))) {
+                            addTranslator(loc, trans);
+                            locales.append(loc);
+                            qCDebug(CUTELYST_GRANTLEE) << "Loaded translations for locale" << loc << "from" << ts.absoluteFilePath();
+                        } else {
+                            delete trans;
+                            qCWarning(CUTELYST_GRANTLEE) << "Can not load translations for locale" << loc;
+                        }
+                    } else {
+                        qCWarning(CUTELYST_GRANTLEE) << "Can not load translations for invalid locale string" << locString;
+                    }
+                }
+                locales.squeeze();
+            } else {
+                qCWarning(CUTELYST_GRANTLEE) << "Can not find translation files for" << filename << "in directory" << directory;
+            }
+        } else {
+            qCWarning(CUTELYST_GRANTLEE) << "Can not load translations from not existing directory:" << directory;
+        }
+    } else {
+        qCWarning(CUTELYST_GRANTLEE) << "Can not load translations for empty file name or empty path.";
+    }
+
+    return locales;
 }
 
 #include "moc_grantleeview.cpp"

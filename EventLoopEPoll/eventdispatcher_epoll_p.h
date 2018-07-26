@@ -1,3 +1,20 @@
+/*
+ * Copyright (C) 2017-2018 Daniel Nicoletti <dantti12@gmail.com>
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
 #ifndef EVENTDISPATCHER_EPOLL_P_H
 #define EVENTDISPATCHER_EPOLL_P_H
 
@@ -7,65 +24,92 @@
 
 #include <QtCore/QAtomicInt>
 
-enum HandleType {
-    htTimer,
-    htSocketNotifier
+class EpollAbastractEvent
+{
+public:
+    explicit EpollAbastractEvent(int _fd = 0) : fd(_fd) {}
+    virtual ~EpollAbastractEvent() {}
+
+    virtual void process(quint32 events) = 0;
+
+    inline bool canProcess() { return refs > 1; }
+    inline void ref() { ++refs; }
+    inline void deref() { if (--refs == 0) delete this; }
+
+    int fd;
+    int refs = 1;
 };
 
-struct SocketNotifierInfo {
-    QSocketNotifier* r;
-    QSocketNotifier* w;
-    QSocketNotifier* x;
-    int events;
+class EventDispatcherEPollPrivate;
+class EventFdInfo : public EpollAbastractEvent
+{
+public:
+    EventFdInfo(int _fd, EventDispatcherEPollPrivate *prv) : EpollAbastractEvent(_fd), epPriv(prv) {}
+
+    virtual void process(quint32 events);
+
+    EventDispatcherEPollPrivate *epPriv;
 };
 
-struct TimerInfo {
-    QObject* object;
+class SocketNotifierInfo : public EpollAbastractEvent
+{
+public:
+    SocketNotifierInfo(int _fd) : EpollAbastractEvent(_fd) { }
+
+    virtual void process(quint32 events);
+
+    QSocketNotifier *r = nullptr;
+    QSocketNotifier *w = nullptr;
+    QSocketNotifier *x = nullptr;
+    quint32 events;
+};
+
+class ZeroTimer : public EpollAbastractEvent
+{
+public:
+    ZeroTimer(int _timerId, QObject *obj) : object(obj), timerId(_timerId) {}
+
+    virtual void process(quint32 events);
+
+    QObject *object;
+    int timerId;
+    bool active = true;
+};
+
+class TimerInfo : public EpollAbastractEvent
+{
+public:
+    TimerInfo(int fd, int _timerId, int _interval, QObject *obj)
+        : EpollAbastractEvent(fd), object(obj), timerId(_timerId), interval(_interval) {}
+
+    virtual void process(quint32 events);
+
+    QObject *object;
     struct timeval when;
     int timerId;
     int interval;
-    int fd;
     Qt::TimerType type;
 };
-
-struct ZeroTimer {
-    QObject* object;
-    bool active;
-};
-
-struct HandleData {
-    HandleType type;
-    union {
-        SocketNotifierInfo sni;
-        TimerInfo ti;
-    };
-};
-
-Q_DECLARE_TYPEINFO(SocketNotifierInfo, Q_PRIMITIVE_TYPE);
-Q_DECLARE_TYPEINFO(TimerInfo, Q_PRIMITIVE_TYPE);
-Q_DECLARE_TYPEINFO(HandleData, Q_PRIMITIVE_TYPE);
 
 class EventDispatcherEPoll;
 
 class Q_DECL_HIDDEN EventDispatcherEPollPrivate {
 public:
     EventDispatcherEPollPrivate(EventDispatcherEPoll* const q);
-    ~EventDispatcherEPollPrivate(void);
+    ~EventDispatcherEPollPrivate();
+    void createEpoll();
     bool processEvents(QEventLoop::ProcessEventsFlags flags);
-    void registerSocketNotifier(QSocketNotifier* notifier);
-    void unregisterSocketNotifier(QSocketNotifier* notifier);
+    void registerSocketNotifier(QSocketNotifier *notifier);
+    void unregisterSocketNotifier(QSocketNotifier *notifier);
     void registerTimer(int timerId, int interval, Qt::TimerType type, QObject* object);
-    void registerZeroTimer(int timerId, QObject* object);
+    void registerZeroTimer(int timerId, QObject *object);
     bool unregisterTimer(int timerId);
-    bool unregisterTimers(QObject* object);
-    QList<QAbstractEventDispatcher::TimerInfo> registeredTimers(QObject* object) const;
+    bool unregisterTimers(QObject *object);
+    QList<QAbstractEventDispatcher::TimerInfo> registeredTimers(QObject *object) const;
     int remainingTime(int timerId) const;
-    void wakeup(void);
+    void wake_up_handler();
 
-    typedef QHash<int, HandleData*> HandleHash;
-    typedef QHash<int, HandleData*> TimerHash;
-    typedef QHash<QSocketNotifier*, HandleData*> SocketNotifierHash;
-    typedef QHash<int, ZeroTimer> ZeroTimerHash;
+    static void calculateNextTimeout(TimerInfo *info, const struct timeval &now, struct timeval &delta);
 
 private:
     Q_DISABLE_COPY(EventDispatcherEPollPrivate)
@@ -75,15 +119,12 @@ private:
     int m_epoll_fd = -1;
     int m_event_fd = -1;
     bool m_interrupt = false;
+    EventFdInfo *m_event_fd_info;
     QAtomicInt m_wakeups;
-    HandleHash m_handles;
-    SocketNotifierHash m_notifiers;
-    TimerHash m_timers;
-    ZeroTimerHash m_zero_timers;
-
-    static void socket_notifier_callback(const SocketNotifierInfo& n, int events);
-    void timer_callback(const TimerInfo& info);
-    void wake_up_handler(void);
+    QHash<int, EpollAbastractEvent*> m_handles;
+    QHash<QSocketNotifier*, SocketNotifierInfo*> m_notifiers;
+    QHash<int, TimerInfo*> m_timers;
+    QHash<int, ZeroTimer*> m_zero_timers;
 
     bool disableSocketNotifiers(bool disable);
     bool disableTimers(bool disable);

@@ -1,23 +1,25 @@
 /*
- * Copyright (C) 2013-2016 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2017 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #include "engineuwsgi.h"
+
+#include "uwsgiconnection.h"
+
+#include <uwsgi.h>
 
 #include <Cutelyst/application.h>
 
@@ -40,7 +42,7 @@ struct uwsgi_cutelyst {
 } options;
 
 static QVector<uWSGI *> *coreEngines = nullptr;
-static QVariantMap config;
+static QVariantMap *config;
 
 void cuteOutput(QtMsgType, const QMessageLogContext &, const QString &);
 void uwsgi_cutelyst_loop(void);
@@ -52,6 +54,7 @@ void uwsgi_cutelyst_loop(void);
 void uwsgi_cutelyst_on_load()
 {
     uwsgi_register_loop( (char *) "CutelystQtLoop", uwsgi_cutelyst_loop);
+    config = new QVariantMap;
 
     // Get the uwsgi options
     QVariantMap opts;
@@ -73,7 +76,7 @@ void uwsgi_cutelyst_on_load()
     if (it != opts.constEnd()) {
         const QString ini = cwd.absoluteFilePath(it.value().toString());
         QVariantMap iniConfig = Engine::loadIniConfig(ini);
-        config.unite(iniConfig);
+        config->unite(iniConfig);
         if (!qEnvironmentVariableIsSet("QT_LOGGING_CONF")) {
             qputenv("QT_LOGGING_CONF", ini.toUtf8());
         }
@@ -86,7 +89,7 @@ void uwsgi_cutelyst_on_load()
     }
 #endif
 
-    QCoreApplication *app = new QCoreApplication(uwsgi.argc, uwsgi.argv);
+    auto app = new QCoreApplication(uwsgi.argc, uwsgi.argv);
     app->setProperty("UWSGI_OPTS", opts);
 
     if (qEnvironmentVariableIsSet("CUTELYST_UWSGI_LOG")) {
@@ -94,7 +97,7 @@ void uwsgi_cutelyst_on_load()
     }
 
     if (qEnvironmentVariableIsEmpty("QT_MESSAGE_PATTERN")) {
-        qSetMessagePattern(QStringLiteral("%{category}[%{type}] %{message}"));
+        qSetMessagePattern(QLatin1String("%{category}[%{type}] %{message}"));
     }
 }
 
@@ -148,7 +151,8 @@ int uwsgi_cutelyst_request(struct wsgi_request *wsgi_req)
         return -1;
     }
 
-    coreEngines->at(wsgi_req->async_id)->processRequest(wsgi_req);
+    uwsgiConnection req(wsgi_req);
+    coreEngines->at(wsgi_req->async_id)->processRequest(&req);
 
     return UWSGI_OK;
 }
@@ -163,10 +167,11 @@ void uwsgi_cutelyst_atexit()
     const auto engines = *coreEngines;
     for (uWSGI *engine : engines) {
         engine->stop();
+        delete engine;
     }
-    qDeleteAll(*coreEngines);
 
     delete coreEngines;
+    delete config;
 
     qCDebug(CUTELYST_UWSGI) << "Child process finished:" << QCoreApplication::applicationPid();
 }
@@ -182,7 +187,7 @@ void uwsgi_cutelyst_init_apps()
     QDir cwd(QString::fromLocal8Bit(uwsgi.cwd));
     QString path = cwd.absoluteFilePath(QString::fromLocal8Bit(options.app));
 
-    QPluginLoader *loader = new QPluginLoader(path);
+    auto loader = new QPluginLoader(path);
     if (!loader->load()) {
         qCCritical(CUTELYST_UWSGI) << "Could not load application:" << loader->errorString();
         exit(1);
@@ -194,7 +199,7 @@ void uwsgi_cutelyst_init_apps()
         exit(1);
     }
 
-    Application *app = qobject_cast<Application *>(instance);
+    auto app = qobject_cast<Application *>(instance);
     if (!app) {
         qCCritical(CUTELYST_UWSGI) << "Could not cast Cutelyst::Application from instance: %s\n" << loader->errorString();
         exit(1);
@@ -209,7 +214,7 @@ void uwsgi_cutelyst_init_apps()
     QVariantMap opts = qApp->property("UWSGI_OPTS").toMap();
 
     auto mainEngine = new uWSGI(app, 0, opts);
-    mainEngine->setConfig(config);
+    mainEngine->setConfig(*config);
     if (!mainEngine->init()) {
         qCCritical(CUTELYST_UWSGI) << "Failed to init application.";
         exit(1);
@@ -237,7 +242,7 @@ void uwsgi_cutelyst_init_apps()
                 // The engine can't have a parent otherwise
                 // we can't move it
                 engine = new uWSGI(app, i, opts);
-                engine->setConfig(config);
+                engine->setConfig(*config);
             }
 
             // the request must be added before moving threads
@@ -323,7 +328,7 @@ struct uwsgi_option uwsgi_cutelyst_options[] = {
 
 };
 
-struct uwsgi_plugin CUTELYST_LIBRARY cutelyst_plugin = {
+struct uwsgi_plugin CUTELYST_LIBRARY cutelyst2_plugin = {
     "cutelyst", // name
     0, // alias
     0, // modifier1

@@ -1,20 +1,19 @@
 /*
- * Copyright (C) 2015-2017 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2015-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #include "dispatchtypechained_p.h"
 #include "common.h"
@@ -34,7 +33,7 @@ DispatchTypeChained::DispatchTypeChained(QObject *parent) : DispatchType(parent)
 
 DispatchTypeChained::~DispatchTypeChained()
 {
-
+    delete d_ptr;
 }
 
 QByteArray DispatchTypeChained::list() const
@@ -180,7 +179,8 @@ DispatchType::MatchType DispatchTypeChained::match(Context *c, const QString &pa
     QStringList decodedArgs;
     const QStringList parts = ret.parts;
     for (const QString &arg : parts) {
-        decodedArgs.append(QUrl::fromPercentEncoding(arg.toLatin1()));
+        QString aux = arg;
+        decodedArgs.append(Utils::decodePercentEncoding(&aux));
     }
 
     ActionChain *action = new ActionChain(chain, c);
@@ -317,7 +317,7 @@ QString DispatchTypeChained::uriForAction(Action *action, const QStringList &cap
     return ret;
 }
 
-Action *DispatchTypeChained::expandAction(Context *c, Action *action) const
+Action *DispatchTypeChained::expandAction(const Context *c, Action *action) const
 {
     Q_D(const DispatchTypeChained);
 
@@ -328,7 +328,7 @@ Action *DispatchTypeChained::expandAction(Context *c, Action *action) const
 
     // The action must be chained to something
     if (!action->attributes().contains(QStringLiteral("Chained"))) {
-        return 0;
+        return nullptr;
     }
 
     ActionList chain;
@@ -340,7 +340,7 @@ Action *DispatchTypeChained::expandAction(Context *c, Action *action) const
         curr = d->actions.value(parent);
     }
 
-    return new ActionChain(chain, c);
+    return new ActionChain(chain, const_cast<Context*>(c));
 }
 
 bool DispatchTypeChained::inUse()
@@ -364,7 +364,7 @@ BestActionMatch DispatchTypeChainedPrivate::recurseMatch(int reqArgsSize, const 
         return bestAction;
     }
 
-    const StringActionsMap children = it.value();
+    const StringActionsMap &children = it.value();
     QStringList keys = children.keys();
     std::sort(keys.begin(), keys.end(), [](const QString &a, const QString &b) -> bool {
         // action2 then action1 to try the longest part first

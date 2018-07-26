@@ -1,22 +1,20 @@
 /*
- * Copyright (C) 2013-2016 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #ifndef CUTELYST_REQUEST_H
 #define CUTELYST_REQUEST_H
 
@@ -39,32 +37,31 @@ class Context;
 /** A vector of Upload pointers */
 typedef QVector<Upload *> Uploads;
 
+class EngineRequest;
 class RequestPrivate;
 class CUTELYST_LIBRARY Request : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(QString hostname READ hostname)
-    Q_PROPERTY(quint16 port READ port)
-    Q_PROPERTY(QUrl uri READ uri)
-    Q_PROPERTY(QString base READ base)
-    Q_PROPERTY(QString path READ path)
-    Q_PROPERTY(QString match READ match)
-    Q_PROPERTY(QStringList arguments READ arguments)
-    Q_PROPERTY(QStringList args READ arguments)
-    Q_PROPERTY(bool secure READ secure)
-    Q_PROPERTY(QVariant bodyData READ bodyData)
-    Q_PROPERTY(Cutelyst::ParamsMultiMap bodyParams READ bodyParameters)
-    Q_PROPERTY(Cutelyst::ParamsMultiMap queryParams READ queryParameters)
-    Q_PROPERTY(Cutelyst::ParamsMultiMap parameters READ parameters)
-    Q_PROPERTY(Cutelyst::ParamsMultiMap params READ parameters)
-    Q_PROPERTY(QVariant headers READ headers())
-    Q_PROPERTY(QString contentEncoding READ contentEncoding)
-    Q_PROPERTY(QString contentType READ contentType)
-    Q_PROPERTY(QString method READ method)
-    Q_PROPERTY(QString protocol READ protocol)
-    Q_PROPERTY(QString userAgent READ userAgent)
-    Q_PROPERTY(QString referer READ referer)
-    Q_PROPERTY(QString remoteUser READ remoteUser)
+    Q_PROPERTY(QString hostname READ hostname CONSTANT)
+    Q_PROPERTY(quint16 port READ port CONSTANT)
+    Q_PROPERTY(QUrl uri READ uri CONSTANT)
+    Q_PROPERTY(QString base READ base CONSTANT)
+    Q_PROPERTY(QString path READ path CONSTANT)
+    Q_PROPERTY(QString match READ match CONSTANT)
+    Q_PROPERTY(QStringList arguments READ arguments CONSTANT)
+    Q_PROPERTY(QStringList args READ arguments CONSTANT)
+    Q_PROPERTY(bool secure READ secure CONSTANT)
+    Q_PROPERTY(QVariant bodyData READ bodyData CONSTANT)
+    Q_PROPERTY(Cutelyst::ParamsMultiMap bodyParams READ bodyParameters CONSTANT)
+    Q_PROPERTY(Cutelyst::ParamsMultiMap queryParams READ queryParameters CONSTANT)
+    Q_PROPERTY(QVariant headers READ headers() CONSTANT)
+    Q_PROPERTY(QString contentEncoding READ contentEncoding CONSTANT)
+    Q_PROPERTY(QString contentType READ contentType CONSTANT)
+    Q_PROPERTY(QString method READ method CONSTANT)
+    Q_PROPERTY(QString protocol READ protocol CONSTANT)
+    Q_PROPERTY(QString userAgent READ userAgent CONSTANT)
+    Q_PROPERTY(QString referer READ referer CONSTANT)
+    Q_PROPERTY(QString remoteUser READ remoteUser CONSTANT)
 public:
     virtual ~Request();
 
@@ -207,14 +204,32 @@ public:
     QVariant bodyData() const;
 
     /**
-     * Returns a QVariantMap of body (POST) parameters, this method
+     * When request Content-Type is 'application/json' this will
+     * contain the parsed JSON representation document.
+     */
+    QJsonDocument bodyJsonDocument() const;
+
+    /**
+     * When request Content-Type is 'application/json' this will
+     * contain the parsed JSON representation object.
+     */
+    QJsonObject bodyJsonObject() const;
+
+    /**
+     * When request Content-Type is 'application/json' this will
+     * contain the parsed JSON representation array.
+     */
+    QJsonArray bodyJsonArray() const;
+
+    /**
+     * Returns a QVariantMap of body (POST/PUT) parameters, this method
      * is expensive as it creates the map each time it's called, cache
      * it's result instead of calling multiple times
      */
     QVariantMap bodyParametersVariant() const;
 
     /**
-     * Returns a QMultiHash of body (POST) parameters
+     * Returns a Map of body (POST/PUT) parameters when content type is application/x-www-form-urlencoded
      */
     ParamsMultiMap bodyParameters() const;
 
@@ -225,8 +240,10 @@ public:
 
     /**
      * Convenience method for geting all body values passing a key
+     *
+     * \note Unlike QMap::values() this return values in insertion order.
      */
-    inline QStringList bodyParameters(const QString &key) const;
+    QStringList bodyParameters(const QString &key) const;
 
     /**
      * Short for bodyParameters()
@@ -240,6 +257,8 @@ public:
 
     /**
      * Convenience method for geting all body values passing a key
+     *
+     * \note Unlike QMap::values() this return values in insertion order.
      */
     inline QStringList bodyParams(const QString &key) const;
 
@@ -253,14 +272,14 @@ public:
     QString queryKeywords() const;
 
     /**
-     * Returns a QVariantMap of query string (GET) parameters, this method
+     * Returns a QVariantMap of query string parameters, this method
      * is expensive as it creates the map each time it's called, cache
      * it's result instead of calling multiple times
      */
     QVariantMap queryParametersVariant() const;
 
     /**
-     * Returns a QMultiHash containing the query string (GET) parameters
+     * Returns a QMultiHash containing the query string parameters
      */
     ParamsMultiMap queryParameters() const;
 
@@ -271,8 +290,10 @@ public:
 
     /**
      * Convenience method for geting all query values passing a key
+     *
+     * \note Unlike QMap::values() this return values in insertion order.
      */
-    inline QStringList queryParameters(const QString &key) const;
+    QStringList queryParameters(const QString &key) const;
 
     /**
      * Short for queryParameters()
@@ -286,38 +307,10 @@ public:
 
     /**
      * Convenience method for geting all query values passing a key
+     *
+     * \note Unlike QMap::values() this return values in insertion order.
      */
     inline QStringList queryParams(const QString &key) const;
-
-    /**
-     * Returns a QVariantMap of both query string (GET) and body (POST) parameters, this method
-     * is expensive as it creates the map each time it's called, cache
-     * it's result instead of calling multiple times
-     */
-    QVariantMap parametersVariant() const;
-
-    /**
-     * Returns a QMultiHash containing both the query parameters (GET)
-     * and the body parameters (POST)
-     */
-    ParamsMultiMap parameters() const;
-
-    /**
-     * Returns the value specified by key, it's equivalent to calling
-     * parameters().value().
-     */
-    inline QString param(const QString &key, const QString &defaultValue = QString()) const;
-
-    /**
-     * Returns the values specified by key, it's equivalent to calling
-     * parameters().values().
-     */
-    inline QStringList params(const QString &key) const;
-
-    /**
-     * Short for parameters()
-     */
-    inline ParamsMultiMap params() const;
 
     /**
      * Returns the Content-Encoding header
@@ -335,9 +328,16 @@ public:
     QString cookie(const QString &name) const;
 
     /**
+     * Returns a list of cookies that match with the given name
+     *
+     * \note Unlike QMap::values() this return values in insertion order.
+     */
+    QStringList cookies(const QString &name) const;
+
+    /**
      * Returns all the cookies from the request
      */
-    QMap<QString, QString> cookies() const;
+    ParamsMultiMap cookies() const;
 
     /**
      * Short for headers().header(key);
@@ -365,6 +365,26 @@ public:
     bool isGet() const;
 
     /**
+     * Returns true if the request method is HEAD.
+     */
+    bool isHead() const;
+
+    /**
+     * Returns true if the request method is PUT.
+     */
+    bool isPut() const;
+
+    /**
+     * Returns true if the request method is PATCH.
+     */
+    bool isPatch() const;
+
+    /**
+     * Returns true if the request method is DELETE.
+     */
+    bool isDelete() const;
+
+    /**
      * Returns the protocol (HTTP/1.0 or HTTP/1.1) used for the current request.
      */
     QString protocol() const;
@@ -385,7 +405,7 @@ public:
     QString remoteUser() const;
 
     /**
-     * Returns a vector containing uploads
+     * Returns a vector containing uploads as provided by a multipart/form-data content type
      */
     QVector<Upload *> uploads() const;
 
@@ -453,15 +473,9 @@ public:
     Engine *engine() const;
 
     /**
-     * Returns the internal pointer that references a request in the engine.
-     * You should never use this method.
-     */
-    void *engineData();
-
-    /**
      * Constructs a new Request object.
      */
-    Request(RequestPrivate *prv);
+    Request(EngineRequest *engineRequest);
 
 Q_SIGNALS:
     /*!
@@ -503,6 +517,7 @@ private:
     friend class Application;
     friend class Dispatcher;
     friend class DispatchType;
+    friend class Context;
     Q_DECLARE_PRIVATE(Request)
 };
 
@@ -512,9 +527,6 @@ inline QStringList Request::args() const
 inline QString Request::bodyParameter(const QString &key, const QString &defaultValue) const
 { return bodyParameters().value(key, defaultValue); }
 
-inline QStringList Request::bodyParameters(const QString &key) const
-{ return bodyParameters().values(key); }
-
 inline ParamsMultiMap Request::bodyParams() const
 { return bodyParameters(); }
 
@@ -522,13 +534,10 @@ inline QString Request::bodyParam(const QString &key, const QString &defaultValu
 { return bodyParameters().value(key, defaultValue); }
 
 inline QStringList Request::bodyParams(const QString &key) const
-{ return bodyParameters().values(key); }
+{ return bodyParameters(key); }
 
 inline QString Request::queryParameter(const QString &key, const QString &defaultValue) const
 { return queryParameters().value(key, defaultValue); }
-
-inline QStringList Request::queryParameters(const QString &key) const
-{ return queryParameters().values(key); }
 
 inline ParamsMultiMap Request::queryParams() const
 { return queryParameters(); }
@@ -537,16 +546,7 @@ inline QString Request::queryParam(const QString &key, const QString &defaultVal
 { return queryParameters().value(key, defaultValue); }
 
 inline QStringList Request::queryParams(const QString &key) const
-{ return queryParameters().values(key); }
-
-inline QString Request::param(const QString &key, const QString &defaultValue) const
-{ return parameters().value(key, defaultValue); }
-
-inline QStringList Request::params(const QString &key) const
-{ return parameters().values(key); }
-
-inline ParamsMultiMap Request::params() const
-{ return parameters(); }
+{ return queryParameters(key); }
 
 inline QString Request::contentEncoding() const
 { return headers().contentEncoding(); }

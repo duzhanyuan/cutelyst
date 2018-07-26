@@ -1,22 +1,20 @@
 /*
- * Copyright (C) 2013-2017 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #ifndef CUTELYST_CONTEXT_H
 #define CUTELYST_CONTEXT_H
 
@@ -52,17 +50,23 @@ class ContextPrivate;
 class CUTELYST_LIBRARY Context : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(Action* action READ action)
-    Q_PROPERTY(QString actionName READ actionName)
-    Q_PROPERTY(QString ns READ ns)
-    Q_PROPERTY(QString namespace READ ns)
-    Q_PROPERTY(Request *req READ request)
-    Q_PROPERTY(Request *request READ request)
-    Q_PROPERTY(Controller *controller READ controller)
-    Q_PROPERTY(QString controllerName READ controllerName)
-    Q_PROPERTY(QVariantMap config READ config)
-    Q_PROPERTY(bool state READ state)
+    Q_PROPERTY(Action* action READ action CONSTANT)
+    Q_PROPERTY(QString actionName READ actionName CONSTANT)
+    Q_PROPERTY(QString ns READ ns CONSTANT)
+    Q_PROPERTY(QString namespace READ ns CONSTANT)
+    Q_PROPERTY(Request *req READ request CONSTANT)
+    Q_PROPERTY(Request *request READ request CONSTANT)
+    Q_PROPERTY(Controller *controller READ controller CONSTANT)
+    Q_PROPERTY(QString controllerName READ controllerName CONSTANT)
+    Q_PROPERTY(QVariantMap config READ config CONSTANT)
+    Q_PROPERTY(bool state READ state CONSTANT)
 public:
+    /*!
+     * Constructs a new DUMMY Context object that is child of Application
+     * This currently is experimental to allow non network events (such as database notification)
+     * to be able to use our infrastructure
+     */
+    Context(Application *app);
     virtual ~Context();
 
     /*!
@@ -157,24 +161,22 @@ public:
     Controller *controller() const;
 
     /**
-     * Returns the controller by name, or 0
+     * Returns the controller by name, or nullptr
      * if the controller is not found
      */
     Controller *controller(const QString &name) const;
 
     /**
-     * Returns the view set to be used
-     * for rendering this request, if one
-     * is set by setView() or 0 if none was set
+     * Returns the view with name name or nullptr if not found
      */
-    View *view() const;
+    View *view(const QString &name = QString()) const;
 
     /**
      * Returns the view set to be used
      * for rendering this request, if one
-     * is set by setView() or 0 if none was set
+     * is set by setView() or nullptr if none was set
      */
-    View *view(const QString &name) const;
+    View *customView() const;
 
     /**
      * Defines the view to be used to render
@@ -187,7 +189,7 @@ public:
      * Returns true if a view with the given
      * name was found
      */
-    bool setView(const QString &name);
+    bool setCustomView(const QString &name);
 
     /**
      * You can set hash keys by passing arguments,
@@ -383,20 +385,17 @@ public:
     /**
      * Gets an action in a given namespace.
      */
-    // TODO C2 mark as const
-    Action *getAction(const QString &action, const QString &ns = QString());
+    Action *getAction(const QString &action, const QString &ns = QString()) const;
 
     /**
      * Gets all actions of a given name in a namespace and all parent namespaces.
      */
-    // TODO C2 mark as const
-    QVector<Action *> getActions(const QString &action, const QString &ns = QString());
+    QVector<Action *> getActions(const QString &action, const QString &ns = QString()) const;
 
     /**
      * Returns all registered plugins
      */
-    // TODO C2 mark as const
-    QVector<Plugin *> plugins();
+    QVector<Plugin *> plugins() const;
 
     /*!
      * Returns the registered plugin that casts to the template type \p T
@@ -411,7 +410,7 @@ public:
                 return p;
             }
         }
-        return 0;
+        return nullptr;
     }
 
     /**
@@ -455,12 +454,6 @@ public:
     QVariantMap config() const;
 
     /**
-     * Pointer to internal engine data about the current request.
-     * \note It's only used by Engines subclasses, Application code should not use it.
-     */
-    void *engineData();
-
-    /**
      * Translates the \a sourceText for the given \a context into the language defined by locale().
      *
      * See Application::addTranslator() for information about installation of translators. Internally
@@ -474,6 +467,33 @@ public:
      * \endcode
      */
     QString translate(const char *context, const char *sourceText, const char *disambiguation = nullptr, int n = -1) const;
+
+    /*!
+     * This method is deprecated and no longer works, creating local event loops
+     * leads to crashes.
+     *
+     * This creates a local event loop that requires next() to be called \p count times.
+     *
+     * If wait() was already called and didn't return it will increase the counter of
+     * the unfinished wait().
+     *
+     * Returns true when the event loop finishes and false if the call only increased
+     * the event loop counter.
+     */
+    Q_DECL_DEPRECATED bool wait(uint count = 1);
+
+public Q_SLOTS:
+    /*!
+     * This method is deprecated and no longer works, creating local event loops
+     * leads to crashes.
+     *
+     * Decreases the local event loop counter created by wait() eventually
+     * quitting it's execution if 0 is reached.
+     *
+     * If you set force to true it will quit the loop immediately
+     * regardless of it's counter.
+     */
+    void next(bool force = false);
 
 protected:
     /*!

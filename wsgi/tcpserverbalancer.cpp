@@ -1,20 +1,19 @@
 /*
- * Copyright (C) 2017 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2017-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #include "tcpserverbalancer.h"
 
@@ -38,7 +37,7 @@
 #endif
 
 
-Q_LOGGING_CATEGORY(CWSGI_BALANCER, "wsgi.tcp_server_balancer")
+Q_LOGGING_CATEGORY(CWSGI_BALANCER, "wsgi.tcp_server_balancer", QtWarningMsg)
 
 using namespace CWSGI;
 
@@ -53,16 +52,30 @@ TcpServerBalancer::TcpServerBalancer(WSGI *wsgi) : QTcpServer(wsgi)
 
 TcpServerBalancer::~TcpServerBalancer()
 {
+#ifndef QT_NO_SSL
     delete m_sslConfiguration;
+#endif // QT_NO_SSL
 }
 
 bool TcpServerBalancer::listen(const QString &line, Protocol *protocol, bool secure)
 {
     m_protocol = protocol;
 
-    const QString addressString = line
-            .section(QLatin1Char(':'), 0, 0)
-            .section(QLatin1Char(','), 0, 0);
+    int commaPos = line.indexOf(QLatin1Char(','));
+    const QString addressPortString = line.mid(0, commaPos);
+
+    QString addressString;
+    int closeBracketPos = addressPortString.indexOf(QLatin1Char(']'));
+    if (closeBracketPos != -1) {
+        if (!line.startsWith(QLatin1Char('['))) {
+            std::cerr << "Failed to parse address: " << qPrintable(addressPortString) << std::endl;
+            exit(1);
+        }
+        addressString = addressPortString.mid(1, closeBracketPos - 1);
+    } else {
+        addressString = addressPortString.section(QLatin1Char(':'), 0, -2);
+    }
+    const QString portString = addressPortString.section(QLatin1Char(':'), -1);
 
     QHostAddress address;
     if (addressString.isEmpty()) {
@@ -71,37 +84,41 @@ bool TcpServerBalancer::listen(const QString &line, Protocol *protocol, bool sec
         address.setAddress(addressString);
     }
 
-    const QString afterColon = line.section(QLatin1Char(':'), 1);
-    const QString portString = afterColon.section(QLatin1Char(','), 0, 0);
-
     bool ok;
     quint16 port = portString.toUInt(&ok);
-    if (!ok || (port < 1 && port > 35554)) {
+    if (!ok || (port < 1 || port > 35554)) {
         port = 80;
     }
 
+#ifndef QT_NO_SSL
     if (secure) {
-        const QString certPath = afterColon.section(QLatin1Char(','), 1, 1);
-        auto certFile = new QFile(certPath);
-        if (!certFile->open(QFile::ReadOnly)) {
-            std::cerr << "Failed to open SSL certificate" << qPrintable(certPath)
-                      << qPrintable(certFile->errorString()) << std::endl;
+        if (commaPos == -1) {
+            std::cerr << "No SSL certificate specified" << std::endl;
             exit(1);
         }
-        QSslCertificate cert(certFile);
+
+        const QString sslString = line.mid(commaPos + 1);
+        const QString certPath = sslString.section(QLatin1Char(','), 0, 0);
+        QFile certFile(certPath);
+        if (!certFile.open(QFile::ReadOnly)) {
+            std::cerr << "Failed to open SSL certificate" << qPrintable(certPath)
+                      << qPrintable(certFile.errorString()) << std::endl;
+            exit(1);
+        }
+        QSslCertificate cert(&certFile);
         if (cert.isNull()) {
             std::cerr << "Failed to parse SSL certificate" << std::endl;
             exit(1);
         }
 
-        const QString keyPath = afterColon.section(QLatin1Char(','), 2, 2);
-        auto keyFile = new QFile(keyPath);
-        if (!keyFile->open(QFile::ReadOnly)) {
+        const QString keyPath = sslString.section(QLatin1Char(','), 1, 1);
+        QFile keyFile(keyPath);
+        if (!keyFile.open(QFile::ReadOnly)) {
             std::cerr << "Failed to open SSL private key" << qPrintable(keyPath)
-                      << qPrintable(keyFile->errorString()) << std::endl;
+                      << qPrintable(keyFile.errorString()) << std::endl;
             exit(1);
         }
-        QSslKey key(keyFile, QSsl::Rsa);
+        QSslKey key(&keyFile, QSsl::Rsa);
         if (key.isNull()) {
             std::cerr << "Failed to parse SSL private key" << std::endl;
             exit(1);
@@ -110,17 +127,17 @@ bool TcpServerBalancer::listen(const QString &line, Protocol *protocol, bool sec
         m_sslConfiguration = new QSslConfiguration;
         m_sslConfiguration->setLocalCertificate(cert);
         m_sslConfiguration->setPrivateKey(key);
+        if (m_wsgi->httpsH2()) {
+            m_sslConfiguration->setAllowedNextProtocols({ QByteArrayLiteral("h2") });
+        }
     }
+#endif // QT_NO_SSL
 
     m_address = address;
     m_port = port;
 
-    bool reusePort = false;
 #ifdef Q_OS_LINUX
-    reusePort = m_wsgi->reusePort();
-#endif
-    if (reusePort) {
-#ifdef Q_OS_LINUX
+    if (m_wsgi->reusePort()) {
         int socket = listenReuse(address, port, false);
         if (socket > 0) {
             setSocketDescriptor(socket);
@@ -130,8 +147,8 @@ bool TcpServerBalancer::listen(const QString &line, Protocol *protocol, bool sec
                       << " : " << qPrintable(errorString()) << std::endl;
             exit(1);
         }
-#endif
     } else {
+#endif
         bool ret = QTcpServer::listen(address, port);
         if (ret) {
             pauseAccepting();
@@ -140,7 +157,9 @@ bool TcpServerBalancer::listen(const QString &line, Protocol *protocol, bool sec
                       << " : " << qPrintable(errorString()) << std::endl;
             exit(1);
         }
+#ifdef Q_OS_LINUX
     }
+#endif
 
     m_serverName = serverAddress().toString() + QLatin1Char(':') + QString::number(port);
     return true;
@@ -374,16 +393,18 @@ void TcpServerBalancer::incomingConnection(qintptr handle)
 {
     TcpServer *serverIdle = m_servers.at(m_currentServer++ % m_servers.size());
 
-    serverIdle->createConnection(handle);
+    Q_EMIT serverIdle->createConnection(handle);
 }
 
 TcpServer *TcpServerBalancer::createServer(CWsgiEngine *engine)
 {
     TcpServer *server;
     if (m_sslConfiguration) {
+#ifndef QT_NO_SSL
         auto sslServer = new TcpSslServer(m_serverName, m_protocol, m_wsgi, engine);
         sslServer->setSslConfiguration(*m_sslConfiguration);
         server = sslServer;
+#endif //QT_NO_SSL
     } else {
         server = new TcpServer(m_serverName, m_protocol, m_wsgi, engine);
     }
@@ -419,3 +440,5 @@ TcpServer *TcpServerBalancer::createServer(CWsgiEngine *engine)
 
     return server;
 }
+
+#include "moc_tcpserverbalancer.cpp"

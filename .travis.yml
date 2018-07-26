@@ -28,6 +28,8 @@ before_install:
       uwsgi uuid-dev libcap-dev libzmq3-dev libpcre3-dev zlib1g-dev libssl-dev
       clearsilver-dev
       libmemcached-dev
+      libjemalloc-dev
+      libpwquality-dev
       qt${QT_VERSION_MM}base qt${QT_VERSION_MM}tools
       && export CMAKE_PREFIX_PATH=/opt/qt${QT_VERSION_MM};
     fi
@@ -41,11 +43,26 @@ before_install:
 before_script:
    - mkdir build
    - cd build
-   - cmake .. -DCMAKE_BUILD_TYPE=$CONFIG -DENABLE_MAINTAINER_CFLAGS=on
+   - if [ "$TRAVIS_OS_NAME" = "osx" ]; then
+       cmake .. -DCMAKE_BUILD_TYPE=$CONFIG -DENABLE_MAINTAINER_CFLAGS=on -DBUILD_ALL=on
+       -DPLUGIN_VIEW_EMAIL=off
+       -DPLUGIN_VIEW_GRANTLEE=off
+       -DPLUGIN_VIEW_CLEARSILVER=off
+       -DPLUGIN_MEMCACHED=off
+       -DPLUGIN_MEMCACHEDSESSIONSTORE=off
+       -DPLUGIN_UWSGI=off
+       -DPLUGIN_VALIDATOR_PWQUALITY=off
+       -DUSE_JEMALLOC=off
+     ;fi
+   - if [ "$TRAVIS_OS_NAME" = "linux" ]; then
+       cmake .. -DCMAKE_BUILD_TYPE=$CONFIG -DENABLE_MAINTAINER_CFLAGS=on -DBUILD_ALL=on
+       -DPLUGIN_VIEW_EMAIL=off
+       -DPLUGIN_VIEW_GRANTLEE=off
+     ;fi
 
 script:
-   - cmake --build . --config $CONFIG
-   - ctest --output-on-failure
+   - cmake --build . --config $CONFIG &&
+     ctest --output-on-failure
 
 notifications:
   email:

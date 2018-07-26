@@ -1,125 +1,93 @@
 set(plugin_validator_SRC
     validator.cpp
     validator_p.h
-    validator.h
     validatorrule.cpp
     validatorrule_p.h
-    validatorrule.h
     validatoraccepted.cpp
     validatoraccepted_p.h
-    validatoraccepted.h
     validatorafter.cpp
     validatorafter_p.h
-    validatorafter.h
     validatoralpha.cpp
     validatoralpha_p.h
-    validatoralpha.h
     validatoralphadash.cpp
     validatoralphadash_p.h
-    validatoralphadash.h
     validatoralphanum.cpp
     validatoralphanum_p.h
-    validatoralphanum.h
     validatorbefore.cpp
     validatorbefore_p.h
-    validatorbefore.h
     validatorbetween.cpp
     validatorbetween_p.h
-    validatorbetween.h
     validatorboolean.cpp
     validatorboolean_p.h
-    validatorboolean.h
     validatorconfirmed.cpp
     validatorconfirmed_p.h
-    validatorconfirmed.h
     validatordate.cpp
     validatordate_p.h
-    validatordate.h
     validatordatetime.cpp
     validatordatetime_p.h
-    validatordatetime.h
     validatordifferent.cpp
     validatordifferent_p.h
-    validatordifferent.h
     validatordigits.cpp
     validatordigits_p.h
-    validatordigits.h
     validatordigitsbetween.cpp
     validatordigitsbetween_p.h
-    validatordigitsbetween.h
+    validatordomain.cpp
+    validatordomain_p.h
     validatoremail.cpp
     validatoremail_p.h
-    validatoremail.h
+    validatorfilesize.cpp
+    validatorfilesize_p.h
     validatorfilled.cpp
     validatorfilled_p.h
-    validatorfilled.h
     validatorin.cpp
     validatorin_p.h
-    validatorin.h
     validatorinteger.cpp
     validatorinteger_p.h
-    validatorinteger.h
     validatorip.cpp
     validatorip_p.h
-    validatorip.h
     validatorjson.cpp
     validatorjson_p.h
-    validatorjson.h
     validatormax.cpp
     validatormax_p.h
-    validatormax.h
     validatormin.cpp
     validatormin_p.h
-    validatormin.h
     validatornotin.cpp
     validatornotin_p.h
-    validatornotin.h
     validatornumeric.cpp
     validatornumeric_p.h
-    validatornumeric.h
     validatorpresent.cpp
     validatorpresent_p.h
-    validatorpresent.h
     validatorregularexpression.cpp
     validatorregularexpression_p.h
-    validatorregularexpression.h
     validatorrequired.cpp
     validatorrequired_p.h
-    validatorrequired.h
     validatorrequiredif.cpp
     validatorrequiredif_p.h
-    validatorrequiredif.h
+    validatorrequiredifstash.cpp
+    validatorrequiredifstash_p.h
     validatorrequiredunless.cpp
     validatorrequiredunless_p.h
-    validatorrequiredunless.h
+    validatorrequiredunlessstash.cpp
+    validatorrequiredunlessstash_p.h
     validatorrequiredwith.cpp
     validatorrequiredwith_p.h
-    validatorrequiredwith.h
     validatorrequiredwithall.cpp
     validatorrequiredwithall_p.h
-    validatorrequiredwithall.h
     validatorrequiredwithout.cpp
     validatorrequiredwithout_p.h
-    validatorrequiredwithout.h
     validatorrequiredwithoutall.cpp
     validatorrequiredwithoutall_p.h
-    validatorrequiredwithoutall.h
     validatorsame.cpp
     validatorsame_p.h
-    validatorsame.h
     validatorsize.cpp
     validatorsize_p.h
-    validatorsize.h
     validatortime.cpp
     validatortime_p.h
-    validatortime.h
     validatorurl.cpp
     validatorurl_p.h
-    validatorurl.h
     validatorresult.cpp
     validatorresult_p.h
-    validatorresult.h
-) 
+)
 
 
 set(plugin_validator_HEADERS
@@ -141,7 +109,9 @@ set(plugin_validator_HEADERS
     validatordifferent.h
     validatordigits.h
     validatordigitsbetween.h
+    validatordomain.h
     validatoremail.h
+    validatorfilesize.h
     validatorfilled.h
     validatorin.h
     validatorinteger.h
@@ -155,7 +125,9 @@ set(plugin_validator_HEADERS
     validatorregularexpression.h
     validatorrequired.h
     validatorrequiredif.h
+    validatorrequiredifstash.h
     validatorrequiredunless.h
+    validatorrequiredunlessstash.h
     validatorrequiredwith.h
     validatorrequiredwithall.h
     validatorrequiredwithout.h
@@ -169,25 +141,53 @@ set(plugin_validator_HEADERS
     ValidatorResult
 )
 
-add_library(cutelyst_qt5_plugin_utils_validator SHARED
+if (PLUGIN_VALIDATOR_PWQUALITY)
+    find_package(PkgConfig REQUIRED)
+    pkg_search_module(PWQUALITY REQUIRED pwquality>=1.2.2)
+    message(STATUS "PLUGIN: Validator, enable PwQuality")
+    list(APPEND plugin_validator_SRC validatorpwquality.cpp validatorpwquality_p.h)
+    list(APPEND plugin_validator_HEADERS validatorpwquality.h)
+endif (PLUGIN_VALIDATOR_PWQUALITY)
+
+add_library(Cutelyst2Qt5UtilsValidator SHARED
     ${plugin_validator_SRC}
     ${plugin_validator_HEADERS}
 )
-add_library(CutelystQt5::Utils::Validator ALIAS cutelyst_qt5_plugin_utils_validator)
-set_property(TARGET cutelyst_qt5_plugin_utils_validator PROPERTY EXPORT_NAME Utils::Validator)
+add_library(Cutelyst2Qt5::Utils::Validator ALIAS Cutelyst2Qt5UtilsValidator)
 
-set_target_properties(cutelyst_qt5_plugin_utils_validator PROPERTIES
-    VERSION ${CUTELYST_VERSION}
+set_target_properties(Cutelyst2Qt5UtilsValidator PROPERTIES
+    EXPORT_NAME Utils::Validator
+    VERSION ${PROJECT_VERSION}
     SOVERSION ${CUTELYST_API_LEVEL}
 )
 
-target_link_libraries(cutelyst_qt5_plugin_utils_validator
-    PRIVATE cutelyst-qt5
+target_link_libraries(Cutelyst2Qt5UtilsValidator
+    PUBLIC
+        Cutelyst2Qt5::Core
+    PRIVATE
+        Qt5::Network
 )
 
-install(TARGETS cutelyst_qt5_plugin_utils_validator EXPORT CutelystQt5Targets DESTINATION ${CMAKE_INSTALL_LIBDIR})
+if (PLUGIN_VALIDATOR_PWQUALITY)
+    target_link_libraries(Cutelyst2Qt5UtilsValidator
+        PRIVATE
+            ${PWQUALITY_LIBRARIES}
+    )
+    target_compile_definitions(Cutelyst2Qt5UtilsValidator
+        PUBLIC
+            CUTELYST_VALIDATOR_WITH_PWQUALITY
+    )
+    set(CUTELYST_VALIDATOR_DEFINES "-DCUTELYST_VALIDATOR_WITH_PWQUALITY")
+endif (PLUGIN_VALIDATOR_PWQUALITY)
 
-install(FILES ${plugin_validator_HEADERS}
-        DESTINATION include/cutelyst-qt5/Cutelyst/Plugins/Utils
-        COMPONENT Utils::Validator
+set_property(TARGET Cutelyst2Qt5UtilsValidator PROPERTY PUBLIC_HEADER ${plugin_validator_HEADERS})
+install(TARGETS Cutelyst2Qt5UtilsValidator
+    EXPORT CutelystTargets DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    PUBLIC_HEADER DESTINATION include/cutelyst2-qt5/Cutelyst/Plugins/Utils
 )
+
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/CutelystQt5UtilsValidator.pc.in
+    ${CMAKE_CURRENT_BINARY_DIR}/Cutelyst2Qt5UtilsValidator.pc
+    @ONLY
+)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/Cutelyst2Qt5UtilsValidator.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)

@@ -1,22 +1,20 @@
 /*
- * Copyright (C) 2013-2016 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #include "clearsilver_p.h"
 
 #include "context.h"
@@ -27,14 +25,9 @@
 #include <QFile>
 #include <QtCore/QLoggingCategory>
 
-Q_LOGGING_CATEGORY(CUTELYST_CLEARSILVER, "cutelyst.clearsilver")
+Q_LOGGING_CATEGORY(CUTELYST_CLEARSILVER, "cutelyst.clearsilver", QtWarningMsg)
 
 using namespace Cutelyst;
-
-ClearSilver::ClearSilver(QObject *parent) : View(parent)
-  , d_ptr(new ClearSilverPrivate)
-{
-}
 
 ClearSilver::ClearSilver(QObject *parent, const QString &name) : View(parent, name)
   , d_ptr(new ClearSilverPrivate)
@@ -57,6 +50,7 @@ void ClearSilver::setIncludePaths(const QStringList &paths)
 {
     Q_D(ClearSilver);
     d->includePaths = paths;
+    Q_EMIT changed();
 }
 
 QString ClearSilver::templateExtension() const
@@ -69,6 +63,7 @@ void ClearSilver::setTemplateExtension(const QString &extension)
 {
     Q_D(ClearSilver);
     d->extension = extension;
+    Q_EMIT changed();
 }
 
 QString ClearSilver::wrapper() const
@@ -81,6 +76,7 @@ void ClearSilver::setWrapper(const QString &name)
 {
     Q_D(ClearSilver);
     d->wrapper = name;
+    Q_EMIT changed();
 }
 
 NEOERR* cutelyst_render(void *user, char *data)
@@ -90,7 +86,7 @@ NEOERR* cutelyst_render(void *user, char *data)
         body->append(data);
     }
 //    qDebug() << "_render" << body << data;
-    return 0;
+    return nullptr;
 }
 
 QByteArray ClearSilver::render(Context *c) const
@@ -150,7 +146,7 @@ NEOERR* findFile(void *c, HDF *hdf, const char *filename, char **contents)
 
             *contents = qstrdup(file.readAll().constData());
             qCDebug(CUTELYST_CLEARSILVER) << "Rendering template:" << file.fileName();
-            return 0;
+            return nullptr;
         }
     }
 

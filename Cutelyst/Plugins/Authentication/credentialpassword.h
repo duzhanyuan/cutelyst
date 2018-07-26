@@ -1,22 +1,20 @@
 /*
- * Copyright (C) 2013-2014 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2017 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #ifndef CUTELYSTPLUGIN_CREDENTIALPASSWORD_H
 #define CUTELYSTPLUGIN_CREDENTIALPASSWORD_H
 
@@ -33,13 +31,12 @@ class CUTELYST_PLUGIN_AUTHENTICATION_EXPORT CredentialPassword : public Authenti
     Q_OBJECT
     Q_DECLARE_PRIVATE(CredentialPassword)
 public:
-    enum Type {
+    enum PasswordType {
         None,
         Clear,
-        Hashed,
-        SelfCheck
+        Hashed
     };
-    Q_ENUM(Type)
+    Q_ENUM(PasswordType)
 
     /*!
      * Constructs a new CredentialPassword object with the given parent.
@@ -62,12 +59,12 @@ public:
     /*!
      * Returns the type of password this class will be dealing with.
      */
-    Type passwordType() const;
+    PasswordType passwordType() const;
 
     /*!
      * Sets the type of password this class will be dealing with.
      */
-    void setPasswordType(Type type);
+    void setPasswordType(PasswordType type);
 
     /*!
      * Returns the salt string to be prepended to the password
@@ -96,6 +93,7 @@ public:
 
     /*!
      * Creates a password hash string.
+     * \note That is you want pre and post salts you must manualy add them.
      * \param password
      * \param method
      * \param iterations
@@ -104,6 +102,22 @@ public:
      * \return the pbkdf2 representation of the password
      */
     static QByteArray createPassword(const QByteArray &password, QCryptographicHash::Algorithm method, int iterations, int saltByteSize, int hashByteSize);
+
+    /*!
+     * Creates a password hash string using sensible defaults
+     * \note That is you want pre and post salts you must manualy add them.
+     * \param password
+     * \return the pbkdf2 representation of the password
+     */
+    static QByteArray createPassword(const QByteArray &password);
+
+    /*!
+     * Creates a password hash string using sensible defaults
+     * \note That is you want pre and post salts you must manualy add them.
+     * \param password
+     * \return the pbkdf2 representation of the password
+     */
+    inline static QByteArray createPassword(const QString &password);
 
     /*!
      * \brief Generates a pbkdf2 string for the given \p password
@@ -126,6 +140,11 @@ public:
 protected:
     CredentialPasswordPrivate *d_ptr;
 };
+
+QByteArray CredentialPassword::createPassword(const QString &password)
+{
+    return createPassword(password.toUtf8());
+}
 
 } // namespace Plugin
 

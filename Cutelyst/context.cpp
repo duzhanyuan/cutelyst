@@ -1,22 +1,20 @@
 /*
- * Copyright (C) 2013-2016 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2017 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #include "context_p.h"
 
 #include "common.h"
@@ -27,12 +25,14 @@
 #include "controller.h"
 #include "application.h"
 #include "stats.h"
+#include "enginerequest.h"
 
 #include "config.h"
 
 #include <QUrl>
 #include <QUrlQuery>
 #include <QCoreApplication>
+#include <QBuffer>
 
 using namespace Cutelyst;
 
@@ -40,8 +40,23 @@ Context::Context(ContextPrivate *priv) : d_ptr(priv)
 {
 }
 
+Context::Context(Application *app) :
+    d_ptr(new ContextPrivate(app, app->engine(), app->dispatcher(), app->plugins()))
+{
+    auto req = new DummyRequest(this);
+    req->body = new QBuffer(this);
+    req->body->open(QBuffer::ReadWrite);
+    req->context = this;
+
+    d_ptr->response = new Response(app->defaultHeaders(), req);
+    d_ptr->request = new Request(req);
+    d_ptr->request->d_ptr->engine = d_ptr->engine;
+}
+
 Context::~Context()
 {
+    delete d_ptr->request;
+    delete d_ptr->response;
     delete d_ptr;
 }
 
@@ -158,7 +173,7 @@ Controller *Context::controller(const QString &name) const
     return d->dispatcher->controllers().value(name);
 }
 
-View *Context::view() const
+View *Context::customView() const
 {
     Q_D(const Context);
     return d->view;
@@ -170,7 +185,7 @@ View *Context::view(const QString &name) const
     return d->app->view(name);
 }
 
-bool Context::setView(const QString &name)
+bool Context::setCustomView(const QString &name)
 {
     Q_D(Context);
     d->view = d->app->view(name);
@@ -213,16 +228,27 @@ QUrl Context::uriFor(const QString &path, const QStringList &args, const ParamsM
 
     QUrl uri = d->request->uri();
 
-    QString _path = path;
-    if (_path.isEmpty()) {
+    QString _path;
+    if (path.isEmpty()) {
         // ns must NOT return a leading slash
-        _path = QLatin1Char('/') + d->action->controller()->ns();
-    } else if (!_path.startsWith(QLatin1Char('/'))) {
-        _path.prepend(QLatin1Char('/'));
+        const QString controllerNS = d->action->controller()->ns();
+        if (!controllerNS.isEmpty()) {
+            _path.prepend(controllerNS);
+        }
+    } else {
+        _path = path;
     }
 
     if (!args.isEmpty()) {
-        _path = _path + QLatin1Char('/') + args.join(QLatin1Char('/'));
+        if (_path == QLatin1String("/")) {
+            _path += args.join(QLatin1Char('/'));
+        } else {
+            _path = _path + QLatin1Char('/') + args.join(QLatin1Char('/'));
+        }
+    }
+
+    if (!_path.startsWith(QLatin1Char('/'))) {
+        _path.prepend(QLatin1Char('/'));
     }
     uri.setPath(_path, QUrl::DecodedMode);
 
@@ -230,11 +256,10 @@ QUrl Context::uriFor(const QString &path, const QStringList &args, const ParamsM
     if (!queryValues.isEmpty()) {
         // Avoid a trailing '?'
         if (queryValues.size()) {
-            auto it = queryValues.constBegin();
-            const auto end = queryValues.constEnd();
-            while (it != end) {
+            auto it = queryValues.constEnd();
+            while (it != queryValues.constBegin()) {
+                --it;
                 query.addQueryItem(it.key(), it.value());
-                ++it;
             }
         }
     }
@@ -256,7 +281,7 @@ QUrl Context::uriFor(Action *action, const QStringList &captures, const QStringL
     QStringList localArgs = args;
     QStringList localCaptures = captures;
 
-    Action *expandedAction = d->dispatcher->expandAction(const_cast<Context*>(this), action);
+    Action *expandedAction = d->dispatcher->expandAction(this, action);
     if (expandedAction->numberOfCaptures() > 0) {
         while (localCaptures.size() < expandedAction->numberOfCaptures()
                && localArgs.size()) {
@@ -321,21 +346,21 @@ bool Context::forward(const QString &action)
     return d->dispatcher->forward(this, action);
 }
 
-Action *Context::getAction(const QString &action, const QString &ns)
+Action *Context::getAction(const QString &action, const QString &ns) const
 {
-    Q_D(Context);
+    Q_D(const Context);
     return d->dispatcher->getAction(action, ns);
 }
 
-QVector<Action *> Context::getActions(const QString &action, const QString &ns)
+QVector<Action *> Context::getActions(const QString &action, const QString &ns) const
 {
-    Q_D(Context);
+    Q_D(const Context);
     return d->dispatcher->getActions(action, ns);
 }
 
-QVector<Cutelyst::Plugin *> Context::plugins()
+QVector<Cutelyst::Plugin *> Context::plugins() const
 {
-    Q_D(Context);
+    Q_D(const Context);
     return d->plugins;
 }
 
@@ -397,16 +422,41 @@ QVariantMap Context::config() const
     return d->app->config();
 }
 
-void *Context::engineData()
-{
-    Q_D(const Context);
-    return d->requestPtr;
-}
-
 QString Context::translate(const char *context, const char *sourceText, const char *disambiguation, int n) const
 {
     Q_D(const Context);
     return d->app->translate(d->locale, context, sourceText, disambiguation, n);
+}
+
+bool Context::wait(uint count)
+{
+    Q_UNUSED(count)
+//    Q_D(Context);
+//    if (d->loop) {
+//        d->loopWait += count;
+//        return false;
+//    }
+
+//    if (count) {
+//        d->loopWait = count;
+//        d->loop = new QEventLoop(this);
+//        d->loop->exec();
+//        return true;
+//    }
+    return false;
+}
+
+void Context::next(bool force)
+{
+//    Q_D(Context);
+    Q_UNUSED(force)
+//    if (!d->loop || (--d->loopWait && !force)) {
+//        return;
+//    }
+
+//    d->loop->quit();
+//    d->loop->deleteLater();
+//    d->loop = nullptr;
 }
 
 QString ContextPrivate::statsStartExecute(Component *code)
@@ -419,7 +469,7 @@ QString ContextPrivate::statsStartExecute(Component *code)
 
     actionName = code->reverse();
 
-    if (dynamic_cast<Action *>(code)) {
+    if (qobject_cast<Action *>(code)) {
         actionName.prepend(QLatin1Char('/'));
     }
 
@@ -439,3 +489,4 @@ void ContextPrivate::statsFinishExecute(const QString &statsInfo)
 }
 
 #include "moc_context.cpp"
+#include "moc_context_p.cpp"

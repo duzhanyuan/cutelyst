@@ -2,19 +2,18 @@
  * Copyright (C) 2016-2017 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #include "tcpserver.h"
 #include "socket.h"
@@ -54,23 +53,23 @@ void TcpServer::incomingConnection(qintptr handle)
         sock = m_socks.back();
         m_socks.pop_back();
     } else {
-        sock = new TcpSocket(m_wsgi, this);
-        sock->engine = m_engine;
+        sock = new TcpSocket(m_engine, this);
+        sock->protoData = m_protocol->createData(sock);
 
         connect(sock, &QIODevice::readyRead, [sock] () {
             sock->timeout = false;
-            sock->proto->readyRead(sock, sock);
+            sock->proto->parse(sock, sock);
         });
-        connect(sock, &TcpSocket::finished, [this] (TcpSocket *obj) {
-            m_socks.push_back(obj);
+        connect(sock, &TcpSocket::finished, this, [this, sock] () {
+            sock->resetSocket();
+            m_socks.push_back(sock);
             --m_processing;
-        });
+        }, Qt::QueuedConnection);
     }
 
     if (Q_LIKELY(sock->setSocketDescriptor(handle))) {
-        sock->resetSocket();
-
         sock->proto = m_protocol;
+
         sock->serverAddress = m_serverAddress;
         sock->remoteAddress = sock->peerAddress();
         sock->remotePort = sock->peerPort();
@@ -89,7 +88,9 @@ void TcpServer::incomingConnection(qintptr handle)
 
 void TcpServer::shutdown()
 {
-    pauseAccepting();
+    if (isListening()) {
+        pauseAccepting();
+    }
 
     if (m_processing == 0) {
         m_engine->serverShutdown();
@@ -98,8 +99,8 @@ void TcpServer::shutdown()
         for (auto child : childrenL) {
             auto socket = qobject_cast<TcpSocket*>(child);
             if (socket) {
-                socket->headerConnection = Socket::HeaderConnectionClose;
-                connect(socket, &TcpSocket::finished, [this] () {
+                socket->protoData->headerConnection = ProtocolData::HeaderConnectionClose;
+                connect(socket, &TcpSocket::finished, this, [this] () {
                     if (!m_processing) {
                         m_engine->serverShutdown();
                     }

@@ -1,28 +1,33 @@
 /*
- * Copyright (C) 2014-2016 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2014-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-#include "headers_p.h"
+#include "headers.h"
 
 #include "common.h"
+
+#include "engine.h"
 
 #include <QStringList>
 
 using namespace Cutelyst;
+
+inline QString normalizeHeaderKey(const QString &field);
+inline QByteArray decodeBasicAuth(const QString &auth);
+inline std::pair<QString, QString> decodeBasicAuthPair(const QString &auth);
 
 Headers::Headers()
 {
@@ -63,7 +68,7 @@ QString Headers::contentType() const
     QString ret;
     const auto it = m_data.constFind(QStringLiteral("CONTENT_TYPE"));
     if (it != m_data.constEnd()) {
-        const QString ct = it.value();
+        const QString &ct = it.value();
         ret = ct.mid(0, ct.indexOf(QLatin1Char(';'))).toLower();
     }
     return ret;
@@ -79,7 +84,7 @@ QString Headers::contentTypeCharset() const
     QString ret;
     const auto it = m_data.constFind(QStringLiteral("CONTENT_TYPE"));
     if (it != m_data.constEnd()) {
-        const QString contentType = it.value();
+        const QString &contentType = it.value();
         int pos = contentType.indexOf(QLatin1String("charset="), 0, Qt::CaseInsensitive);
         if (pos != -1) {
             int endPos = contentType.indexOf(QLatin1Char(';'), pos);
@@ -180,7 +185,7 @@ QDateTime Headers::date() const
     QDateTime ret;
     auto it = m_data.constFind(QStringLiteral("DATE"));
     if (it != m_data.constEnd()) {
-        const QString date = it.value();
+        const QString &date = it.value();
 
         if (date.endsWith(QLatin1String(" GMT"))) {
             ret = QLocale::c().toDateTime(date.left(date.size() - 4),
@@ -205,7 +210,7 @@ QDateTime Headers::ifModifiedSinceDateTime() const
     QDateTime ret;
     auto it = m_data.constFind(QStringLiteral("IF_MODIFIED_SINCE"));
     if (it != m_data.constEnd()) {
-        const QString ifModifiedStr = it.value();
+        const QString &ifModifiedStr = it.value();
 
         if (ifModifiedStr.endsWith(QLatin1String(" GMT"))) {
             ret = QLocale::c().toDateTime(ifModifiedStr.left(ifModifiedStr.size() - 4),
@@ -298,12 +303,12 @@ QString Headers::authorization() const
 
 QString Headers::authorizationBasic() const
 {
-    return QString::fromLatin1(HeadersPrivate::decodeBasicAuth(authorization()));
+    return QString::fromLatin1(decodeBasicAuth(authorization()));
 }
 
-QPair<QString, QString> Headers::authorizationBasicPair() const
+std::pair<QString, QString> Headers::authorizationBasicPair() const
 {
-    return HeadersPrivate::decodeBasicAuthPair(authorization());
+    return decodeBasicAuthPair(authorization());
 }
 
 QString Headers::setAuthorizationBasic(const QString &username, const QString &password)
@@ -320,13 +325,6 @@ QString Headers::setAuthorizationBasic(const QString &username, const QString &p
     return ret;
 }
 
-QHash<QString, QString> Headers::authorizationDigest() const
-{
-    QHash<QString, QString> ret;
-    qCWarning(CUTELYST_CORE) << "Headers::authorizationDigest not implemented";
-    return ret;
-}
-
 QString Headers::proxyAuthorization() const
 {
     return m_data.value(QStringLiteral("PROXY_AUTHORIZATION"));
@@ -334,27 +332,27 @@ QString Headers::proxyAuthorization() const
 
 QString Headers::proxyAuthorizationBasic() const
 {
-    return QString::fromLatin1(HeadersPrivate::decodeBasicAuth(proxyAuthorization()));
+    return QString::fromLatin1(decodeBasicAuth(proxyAuthorization()));
 }
 
-QPair<QString, QString> Headers::proxyAuthorizationBasicPair() const
+std::pair<QString, QString> Headers::proxyAuthorizationBasicPair() const
 {
-    return HeadersPrivate::decodeBasicAuthPair(proxyAuthorization());
+    return decodeBasicAuthPair(proxyAuthorization());
 }
 
 QString Headers::header(const QString &field) const
 {
-    return m_data.value(HeadersPrivate::normalizeHeaderKey(field));
+    return m_data.value(normalizeHeaderKey(field));
 }
 
 QString Headers::header(const QString &field, const QString &defaultValue) const
 {
-    return m_data.value(HeadersPrivate::normalizeHeaderKey(field), defaultValue);
+    return m_data.value(normalizeHeaderKey(field), defaultValue);
 }
 
 void Headers::setHeader(const QString &field, const QString &value)
 {
-    m_data.insert(HeadersPrivate::normalizeHeaderKey(field), value);
+    m_data.insert(normalizeHeaderKey(field), value);
 }
 
 void Headers::setHeader(const QString &field, const QStringList &values)
@@ -364,22 +362,22 @@ void Headers::setHeader(const QString &field, const QStringList &values)
 
 void Headers::pushHeader(const QString &field, const QString &value)
 {
-    m_data.insertMulti(HeadersPrivate::normalizeHeaderKey(field), value);
+    m_data.insertMulti(normalizeHeaderKey(field), value);
 }
 
 void Headers::pushHeader(const QString &field, const QStringList &values)
 {
-    m_data.insertMulti(HeadersPrivate::normalizeHeaderKey(field), values.join(QStringLiteral(", ")));
+    m_data.insertMulti(normalizeHeaderKey(field), values.join(QStringLiteral(", ")));
 }
 
 void Headers::removeHeader(const QString &field)
 {
-    m_data.remove(HeadersPrivate::normalizeHeaderKey(field));
+    m_data.remove(normalizeHeaderKey(field));
 }
 
 bool Headers::contains(const QString &field)
 {
-    return m_data.contains(HeadersPrivate::normalizeHeaderKey(field));
+    return m_data.contains(normalizeHeaderKey(field));
 }
 
 QString &Headers::operator[](const QString &key)
@@ -392,7 +390,7 @@ const QString Headers::operator[](const QString &key) const
     return m_data[key];
 }
 
-QString HeadersPrivate::normalizeHeaderKey(const QString &field)
+QString normalizeHeaderKey(const QString &field)
 {
     QString key = field;
     int i = 0;
@@ -410,7 +408,7 @@ QString HeadersPrivate::normalizeHeaderKey(const QString &field)
     return key;
 }
 
-QByteArray HeadersPrivate::decodeBasicAuth(const QString &auth)
+QByteArray decodeBasicAuth(const QString &auth)
 {
     QByteArray ret;
     if (!auth.isEmpty() && auth.startsWith(QLatin1String("Basic "))) {
@@ -422,9 +420,9 @@ QByteArray HeadersPrivate::decodeBasicAuth(const QString &auth)
     return ret;
 }
 
-QPair<QString, QString> HeadersPrivate::decodeBasicAuthPair(const QString &auth)
+std::pair<QString, QString> decodeBasicAuthPair(const QString &auth)
 {
-    QPair<QString, QString> ret;
+    std::pair<QString, QString> ret;
     const QByteArray authorization = decodeBasicAuth(auth);
     if (!authorization.isEmpty()) {
         int pos = authorization.indexOf(':');
@@ -436,4 +434,18 @@ QPair<QString, QString> HeadersPrivate::decodeBasicAuthPair(const QString &auth)
         }
     }
     return ret;
+}
+
+QDebug operator<<(QDebug debug, const Headers &headers)
+{
+    const QHash<QString, QString> data = headers.data();
+    const bool oldSetting = debug.autoInsertSpaces();
+    debug.nospace() << "Headers(";
+    for (auto it = data.constBegin();
+         it != data.constEnd(); ++it) {
+        debug << '(' << Engine::camelCaseHeader(it.key()) + QLatin1Char('=') + it.value() << ')';
+    }
+    debug << ')';
+    debug.setAutoInsertSpaces(oldSetting);
+    return debug.maybeSpace();
 }

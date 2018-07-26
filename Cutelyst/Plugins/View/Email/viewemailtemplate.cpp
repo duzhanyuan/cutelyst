@@ -1,22 +1,20 @@
 /*
- * Copyright (C) 2015 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2015-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #include "viewemailtemplate_p.h"
 
 #include <Cutelyst/Context>
@@ -27,7 +25,7 @@
 
 #include <QtCore/QLoggingCategory>
 
-Q_LOGGING_CATEGORY(CUTELYST_VIEW_EMAILTEMPLATE, "cutelyst.view.emailtemplate")
+Q_LOGGING_CATEGORY(CUTELYST_VIEW_EMAILTEMPLATE, "cutelyst.view.emailtemplate", QtWarningMsg)
 
 using namespace Cutelyst;
 
@@ -48,6 +46,7 @@ void ViewEmailTemplate::setTemplatePrefix(const QString &prefix)
 {
     Q_D(ViewEmailTemplate);
     d->templatePrefix = prefix;
+    Q_EMIT changedProp();
 }
 
 QString ViewEmailTemplate::defaultView() const
@@ -60,6 +59,7 @@ void ViewEmailTemplate::setDefaultView(const QString &view)
 {
     Q_D(ViewEmailTemplate);
     d->defaultView = view;
+    Q_EMIT changedProp();
 }
 
 MimePart *generatePart(Context *c, const ViewEmailTemplatePrivate *d, const QVariantHash &partHash)
@@ -79,8 +79,8 @@ MimePart *generatePart(Context *c, const ViewEmailTemplatePrivate *d, const QVar
         view = c->view(defaultView);
     } else {
         // else fallback to Cutelysts default view
-        qCDebug(CUTELYST_VIEW_EMAILTEMPLATE) << "Using Cutelysts default view" << defaultView << "for rendering.";
-        view = c->view();
+        qCDebug(CUTELYST_VIEW_EMAILTEMPLATE) << "Using Cutelysts default view for rendering.";
+        view = c->view(QString());
     }
 
     // validate the per template view

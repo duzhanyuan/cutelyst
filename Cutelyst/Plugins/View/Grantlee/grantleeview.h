@@ -1,28 +1,27 @@
 /*
- * Copyright (C) 2013-2016 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #ifndef GRANTLEE_VIEW_H
 #define GRANTLEE_VIEW_H
 
 #include <QObject>
 #include <QStringList>
 #include <QLocale>
+#include <QVector>
 
 #include <Cutelyst/View>
 
@@ -57,7 +56,7 @@ public:
     explicit GrantleeView(QObject *parent = nullptr, const QString &name = QString());
     ~GrantleeView();
 
-    Q_PROPERTY(QStringList includePaths READ includePaths WRITE setIncludePaths)
+    Q_PROPERTY(QStringList includePaths READ includePaths WRITE setIncludePaths NOTIFY changed)
     /*!
      * Returns the list of include paths
      */
@@ -68,7 +67,7 @@ public:
      */
     void setIncludePaths(const QStringList &paths);
 
-    Q_PROPERTY(QString templateExtension READ templateExtension WRITE setTemplateExtension)
+    Q_PROPERTY(QString templateExtension READ templateExtension WRITE setTemplateExtension NOTIFY changed)
     /*!
      * Returns the template extension
      */
@@ -79,7 +78,7 @@ public:
      */
     void setTemplateExtension(const QString &extension);
 
-    Q_PROPERTY(QString wrapper READ wrapper WRITE setWrapper)
+    Q_PROPERTY(QString wrapper READ wrapper WRITE setWrapper NOTIFY changed)
 
     /*!
      * Returns the template wrapper.
@@ -92,7 +91,7 @@ public:
      */
     void setWrapper(const QString &name);
 
-    Q_PROPERTY(bool cache READ isCaching WRITE setCache)
+    Q_PROPERTY(bool cache READ isCaching WRITE setCache NOTIFY changed)
     /*!
      * Returns true if caching is enabled
      */
@@ -141,6 +140,8 @@ public:
      * }
      * \endcode
      *
+     * \sa loadTranslationsFromDir()
+     *
      * \since Cutelyst 1.5.0
      */
     void addTranslator(const QLocale &locale, QTranslator *translator);
@@ -151,6 +152,8 @@ public:
      * The \a locale string should be parseable by QLocale.
      *
      * \overload
+     *
+     * \sa loadTranslationsFromDir()
      *
      * \since Cutelyst 1.4.0
      */
@@ -195,6 +198,36 @@ public:
      * \since Cutelyst 1.5.0
      */
     void addTranslationCatalogs(const QHash<QString, QString> &catalogs);
+
+    /**
+     * Loads translations for a specific @p filename from a single directory and returns a list of added locales.
+     *
+     * This can be used to load translations for a template if the translation file names follow a common schema.
+     * Let us assume you organised your translation files as follows:
+     * @li @c /usr/share/myapp/translations/mytemplate_de.qm
+     * @li @c /usr/share/myapp/translations/mytemplate_pt_BR.qm
+     * @li @c ...
+     *
+     * You can then use loadTranslationsFromDir() on your registered GrantleeView object as follows:
+     * @code{.cpp}
+     * bool MyApp::init()
+     * {
+     *      auto view = new GrantleeView(this);
+     *      view->loadTranslationsFromDir(QStringLiteral("mytemplate"), QStringLiteral("/usr/share/myapp/translations"), QStringLiteral("_"));
+     * }
+     * @endcode
+     *
+     * @p prefix is the part between the file name and the locale part. In the example above it is @c "_", if it is not set the default @c "." will be used. The
+     * @p suffix is the file name suffix that defaults to <code>".qm"</code>.
+     *
+     * @sa addTranslator(), loadTranslationsFromDir()
+     *
+     * @since Cuteylst 2.1.0
+     */
+    QVector<QLocale> loadTranslationsFromDir(const QString &filename, const QString &directory, const QString &prefix = QStringLiteral("."), const QString &suffix = QStringLiteral(".qm"));
+
+Q_SIGNALS:
+    void changed();
 
 protected:
     GrantleeViewPrivate *d_ptr;

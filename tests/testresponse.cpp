@@ -25,6 +25,9 @@ using namespace Cutelyst;
 class TestResponse : public CoverageObject
 {
     Q_OBJECT
+public:
+    explicit TestResponse(QObject *parent = nullptr) : CoverageObject(parent) {}
+
 private Q_SLOTS:
     void initTestCase();
 
@@ -48,7 +51,7 @@ class ResponseTest : public Controller
 {
     Q_OBJECT
 public:
-    ResponseTest(QObject *parent) : Controller(parent) {}
+    explicit ResponseTest(QObject *parent) : Controller(parent) {}
 
     C_ATTR(status, :Local :AutoArgs)
     void status(Context *c) {
@@ -84,7 +87,7 @@ public:
     C_ATTR(setJsonBody, :Local :AutoArgs)
     void setJsonBody(Context *c) {
         QJsonObject obj;
-        auto params = c->request()->parameters();
+        auto params = c->request()->queryParameters();
         auto it = params.constBegin();
         while (it != params.constEnd()) {
             obj.insert(it.key(), it.value());
@@ -316,8 +319,8 @@ void TestResponse::testController_data()
                                          << QByteArrayLiteral("abcd").repeated(1024 * 1024);
 
     query.clear();
-    query.addQueryItem(QStringLiteral("foo"), QStringLiteral("bar"));
     query.addQueryItem(QStringLiteral("foo"), QStringLiteral("barz"));
+    query.addQueryItem(QStringLiteral("foo"), QStringLiteral("bar"));
     QTest::newRow("setJsonBody-test00") << get << QStringLiteral("/response/test/setJsonBody?") + query.toString(QUrl::FullyEncoded) << headers << QByteArray()
                                         << QByteArrayLiteral("200 OK")
                                         << Headers{ {QStringLiteral("Content-Length"), QStringLiteral("14")}, {QStringLiteral("Content-Type"), QStringLiteral("application/json")} }
@@ -459,7 +462,7 @@ void TestResponse::testController_data()
     cookies.addQueryItem(QStringLiteral("name"), QStringLiteral("foo"));
     cookies.addQueryItem(QStringLiteral("value"), QStringLiteral("bar"));
     cookies.addQueryItem(QStringLiteral("domain"), QStringLiteral("cutelyst.org"));
-    query.addQueryItem(QStringLiteral("expiration_date"), QStringLiteral("2016-06-21T11:08:15Z"));
+    cookies.addQueryItem(QStringLiteral("expiration_date"), QStringLiteral("2016-06-21T11:08:15Z"));
     cookies.addQueryItem(QStringLiteral("path"), QStringLiteral("/path"));
     cookies.addQueryItem(QStringLiteral("secure"), QStringLiteral("true"));
     headers.setContentType(QStringLiteral("application/x-www-form-urlencoded"));
@@ -482,7 +485,7 @@ void TestResponse::testController_data()
     cookies.addQueryItem(QStringLiteral("name"), QStringLiteral("foo"));
     cookies.addQueryItem(QStringLiteral("value"), QStringLiteral("bar"));
     cookies.addQueryItem(QStringLiteral("domain"), QStringLiteral("cutelyst.org"));
-    query.addQueryItem(QStringLiteral("expiration_date"), QStringLiteral("2016-06-21T11:08:15Z"));
+    cookies.addQueryItem(QStringLiteral("expiration_date"), QStringLiteral("2016-06-21T11:08:15Z"));
     cookies.addQueryItem(QStringLiteral("path"), QStringLiteral("/path"));
     cookies.addQueryItem(QStringLiteral("secure"), QStringLiteral("true"));
     headers.setContentType(QStringLiteral("application/x-www-form-urlencoded"));

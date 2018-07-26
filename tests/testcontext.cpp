@@ -17,6 +17,9 @@ using namespace Cutelyst;
 class TestContext : public CoverageObject
 {
     Q_OBJECT
+public:
+    explicit TestContext(QObject *parent = nullptr) : CoverageObject(parent) {}
+
 private Q_SLOTS:
     void initTestCase();
 
@@ -41,7 +44,7 @@ class ContextGetActionsTest : public Controller
     Q_OBJECT
     C_NAMESPACE("context")
 public:
-    ContextGetActionsTest(QObject *parent) : Controller(parent) {}
+    explicit ContextGetActionsTest(QObject *parent) : Controller(parent) {}
 
     C_ATTR(actionName, :Local :AutoArgs)
     void actionName(Context *c) {
@@ -53,7 +56,7 @@ class ContextTest_NS : public Controller
 {
     Q_OBJECT
 public:
-    ContextTest_NS(QObject *parent) : Controller(parent) {}
+    explicit ContextTest_NS(QObject *parent) : Controller(parent) {}
 
     C_ATTR(actionName, :Local :AutoArgs)
     void actionName(Context *c) {
@@ -194,14 +197,14 @@ void TestContext::testController_data()
     query.addQueryItem(QStringLiteral("foo"), QStringLiteral("bar"));
     query.addQueryItem(QStringLiteral("encoded"), QStringLiteral("ç€¢"));
     QTest::newRow("urifor-test04") << QStringLiteral("/uriFor/a/b/c?") + query.toString(QUrl::FullyEncoded)
-                                   << QByteArrayLiteral("http://127.0.0.1/new/path/a/b/c?encoded=\xC3\xA7\xE2\x82\xAC\xC2\xA2&foo=bar");
+                                   << QByteArrayLiteral("http://127.0.0.1/new/path/a/b/c?foo=bar&encoded=\xC3\xA7\xE2\x82\xAC\xC2\xA2");
 
     query.clear();
     query.addQueryItem(QStringLiteral("path"), QStringLiteral("/new/path///"));
     query.addQueryItem(QStringLiteral("foo"), QStringLiteral("bar"));
     query.addQueryItem(QStringLiteral("encoded"), QStringLiteral("ç€¢"));
     QTest::newRow("urifor-test05") << QStringLiteral("/uriFor/a/b/c?") + query.toString(QUrl::FullyEncoded)
-                                   << QByteArrayLiteral("http://127.0.0.1/new/path////a/b/c?encoded=\xC3\xA7\xE2\x82\xAC\xC2\xA2&foo=bar");
+                                   << QByteArrayLiteral("http://127.0.0.1/new/path////a/b/c?foo=bar&encoded=\xC3\xA7\xE2\x82\xAC\xC2\xA2");
 
     query.clear();
     query.addQueryItem(QStringLiteral("path"), QStringLiteral("root")); // no leading slash
@@ -224,6 +227,11 @@ void TestContext::testController_data()
     query.addQueryItem(QStringLiteral("path"), QStringLiteral("/root"));
     QTest::newRow("urifor-test09") << QStringLiteral("/uriFor/a%20space/b/c?") + query.toString(QUrl::FullyEncoded)
                                    << QByteArrayLiteral("http://127.0.0.1/root/a space/b/c");
+
+    query.clear();
+    query.addQueryItem(QStringLiteral("path"), QStringLiteral("/"));
+    QTest::newRow("urifor-test10") << QStringLiteral("/uriFor/a/b/c?") + query.toString(QUrl::FullyEncoded)
+                                   << QByteArrayLiteral("http://127.0.0.1/a/b/c");
 
     // UriForAction Path
     query.clear();
@@ -330,13 +338,13 @@ void TestContext::testController_data()
     query.addQueryItem(QStringLiteral("captures"), QStringLiteral("1/2"));
     query.addQueryItem(QStringLiteral("foo"), QStringLiteral("bar"));
     query.addQueryItem(QStringLiteral("encoded"), QStringLiteral("ç€¢"));
-    QTest::newRow("uriforaction-test17") << QStringLiteral("/uriForAction/a/b/c?") + query.toString(QUrl::FullyEncoded)
-                                         << QByteArrayLiteral("http://127.0.0.1/chain/midle/1/2/end/a/b/c?encoded=\xC3\xA7\xE2\x82\xAC\xC2\xA2&foo=bar");
+    QTest::newRow("uriforaction-test18") << QStringLiteral("/uriForAction/a/b/c?") + query.toString(QUrl::FullyEncoded)
+                                         << QByteArrayLiteral("http://127.0.0.1/chain/midle/1/2/end/a/b/c?foo=bar&encoded=\xC3\xA7\xE2\x82\xAC\xC2\xA2");
 
     query.clear();
     query.addQueryItem(QStringLiteral("action"), QStringLiteral("/test/controller/midleEnd"));
     query.addQueryItem(QStringLiteral("captures"), QStringLiteral("1/2/3")); // too many captures
-    QTest::newRow("uriforaction-test18") << QStringLiteral("/uriForAction/a/b/c?") + query.toString(QUrl::FullyEncoded)
+    QTest::newRow("uriforaction-test19") << QStringLiteral("/uriForAction/a/b/c?") + query.toString(QUrl::FullyEncoded)
                                          << QByteArrayLiteral("uriForAction not found");
 
     QTest::newRow("context-test00") << QStringLiteral("/context/test_ns/actionName") << QByteArrayLiteral("actionName");

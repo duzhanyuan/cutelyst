@@ -1,20 +1,19 @@
 /*
- * Copyright (C) 2013-2017 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #ifndef CLEARSILVER_H
 #define CLEARSILVER_H
@@ -33,18 +32,12 @@ class CUTELYST_VIEW_CLEARSILVER_EXPORT ClearSilver : public View
     Q_DECLARE_PRIVATE(ClearSilver)
 public:
     /*!
-     * Constructs a ClearSilver object with the given parent.
-     */
-    // TODO Cutelyst2 remove
-    explicit ClearSilver(QObject *parent = nullptr);
-
-    /*!
      * Constructs a ClearSilver object with the given parent and name.
      */
     explicit ClearSilver(QObject *parent = nullptr, const QString &name = QString());
     ~ClearSilver();
 
-    Q_PROPERTY(QStringList includePaths READ includePaths WRITE setIncludePaths)
+    Q_PROPERTY(QStringList includePaths READ includePaths WRITE setIncludePaths NOTIFY changed)
     /*!
      * Returns the list of include paths
      */
@@ -55,7 +48,7 @@ public:
      */
     void setIncludePaths(const QStringList &paths);
 
-    Q_PROPERTY(QString templateExtension READ templateExtension WRITE setTemplateExtension)
+    Q_PROPERTY(QString templateExtension READ templateExtension WRITE setTemplateExtension NOTIFY changed)
     /*!
      * Returns the template extension
      */
@@ -66,7 +59,7 @@ public:
      */
     void setTemplateExtension(const QString &extension);
 
-    Q_PROPERTY(QString wrapper READ wrapper WRITE setWrapper)
+    Q_PROPERTY(QString wrapper READ wrapper WRITE setWrapper NOTIFY changed)
     /*!
      * Returns the template wrapper.
      */
@@ -79,6 +72,9 @@ public:
     void setWrapper(const QString &name);
 
     QByteArray render(Context *c) const final;
+
+Q_SIGNALS:
+    void changed();
 
 protected:
     ClearSilverPrivate *d_ptr;

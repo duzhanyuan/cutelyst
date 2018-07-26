@@ -1,27 +1,26 @@
 /*
- * Copyright (C) 2013-2016 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #include "application_p.h"
 
 #include "config.h"
 #include "common.h"
 #include "context_p.h"
+#include "enginerequest.h"
 #include "request.h"
 #include "request_p.h"
 #include "controller.h"
@@ -39,19 +38,22 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QPluginLoader>
 #include <QtCore/QTranslator>
+#include <QtCore/QFileInfo>
+#include <QtCore/QLocale>
 
-Q_LOGGING_CATEGORY(CUTELYST_DISPATCHER, "cutelyst.dispatcher")
-Q_LOGGING_CATEGORY(CUTELYST_DISPATCHER_CHAINED, "cutelyst.dispatcher.chained")
-Q_LOGGING_CATEGORY(CUTELYST_CONTROLLER, "cutelyst.controller")
-Q_LOGGING_CATEGORY(CUTELYST_CORE, "cutelyst.core")
-Q_LOGGING_CATEGORY(CUTELYST_ENGINE, "cutelyst.engine")
-Q_LOGGING_CATEGORY(CUTELYST_UPLOAD, "cutelyst.upload")
-Q_LOGGING_CATEGORY(CUTELYST_MULTIPART, "cutelyst.multipart")
-Q_LOGGING_CATEGORY(CUTELYST_VIEW, "cutelyst.view")
-Q_LOGGING_CATEGORY(CUTELYST_REQUEST, "cutelyst.request")
-Q_LOGGING_CATEGORY(CUTELYST_RESPONSE, "cutelyst.response")
-Q_LOGGING_CATEGORY(CUTELYST_STATS, "cutelyst.stats")
-Q_LOGGING_CATEGORY(CUTELYST_COMPONENT, "cutelyst.component")
+Q_LOGGING_CATEGORY(CUTELYST_DISPATCHER, "cutelyst.dispatcher", QtWarningMsg)
+Q_LOGGING_CATEGORY(CUTELYST_DISPATCHER_PATH, "cutelyst.dispatcher.path", QtWarningMsg)
+Q_LOGGING_CATEGORY(CUTELYST_DISPATCHER_CHAINED, "cutelyst.dispatcher.chained", QtWarningMsg)
+Q_LOGGING_CATEGORY(CUTELYST_CONTROLLER, "cutelyst.controller", QtWarningMsg)
+Q_LOGGING_CATEGORY(CUTELYST_CORE, "cutelyst.core", QtWarningMsg)
+Q_LOGGING_CATEGORY(CUTELYST_ENGINE, "cutelyst.engine", QtWarningMsg)
+Q_LOGGING_CATEGORY(CUTELYST_UPLOAD, "cutelyst.upload", QtWarningMsg)
+Q_LOGGING_CATEGORY(CUTELYST_MULTIPART, "cutelyst.multipart", QtWarningMsg)
+Q_LOGGING_CATEGORY(CUTELYST_VIEW, "cutelyst.view", QtWarningMsg)
+Q_LOGGING_CATEGORY(CUTELYST_REQUEST, "cutelyst.request", QtWarningMsg)
+Q_LOGGING_CATEGORY(CUTELYST_RESPONSE, "cutelyst.response", QtWarningMsg)
+Q_LOGGING_CATEGORY(CUTELYST_STATS, "cutelyst.stats", QtWarningMsg)
+Q_LOGGING_CATEGORY(CUTELYST_COMPONENT, "cutelyst.component", QtWarningMsg)
 
 using namespace Cutelyst;
 
@@ -68,6 +70,8 @@ Application::Application(QObject *parent) :
     qRegisterMetaTypeStreamOperators<ParamsMultiMap>("ParamsMultiMap");
 
     d->dispatcher = new Dispatcher(this);
+
+    loadTranslations(QStringLiteral("cutelystcore"));
 }
 
 Application::~Application()
@@ -146,36 +150,19 @@ Component *Application::createComponentPlugin(const QString &name, QObject *pare
         if (factory) {
             return factory->createComponent(parent);
         } else {
-            return 0;
+            return nullptr;
         }
     }
 
-    QDir pluginsDir(QLatin1String(CUTELYST_PLUGINS_DIR));
-    QPluginLoader loader;
-    Component *component = nullptr;
-    ComponentFactory *factory = nullptr;
-    const auto plugins = pluginsDir.entryList(QDir::Files);
-    for (const QString &fileName : plugins) {
-        loader.setFileName(pluginsDir.absoluteFilePath(fileName));
-        const QJsonObject json = loader.metaData()[QLatin1String("MetaData")].toObject();
-        if (json[QLatin1String("name")].toString() == name) {
-            QObject *plugin = loader.instance();
-            if (plugin) {
-                factory = qobject_cast<ComponentFactory *>(plugin);
-                if (!factory) {
-                    qCCritical(CUTELYST_CORE) << "Could not create a factory for" << loader.fileName();
-                } else {
-                    component = factory->createComponent(parent);
-                }
-                break;
-            } else {
-                qCCritical(CUTELYST_CORE) << "Could not load plugin" << loader.fileName() << loader.errorString();
-            }
+    const QByteArrayList dirs = QByteArrayList{ QByteArrayLiteral(CUTELYST_PLUGINS_DIR) } + qgetenv("CUTELYST_PLUGINS_DIR").split(';');
+    for (const QByteArray &dir : dirs) {
+        Component *component = d->createComponentPlugin(name, parent, QString::fromLocal8Bit(dir));
+        if (component) {
+            return component;
         }
     }
-    d->factories.insert(name, factory);
 
-    return component;
+    return nullptr;
 }
 
 const char *Application::cutelystVersion()
@@ -358,9 +345,10 @@ bool Application::setup(Engine *engine)
         d->dispatcher->setupActions(d->controllers, d->dispatchers, d->engine->workerCore() == 0);
 
         if (zeroCore) {
-            qCInfo(CUTELYST_CORE) << QString::fromLatin1("%1 powered by Cutelyst %2, Qt %3.")
-                                     .arg(QCoreApplication::applicationName(), QLatin1String(Application::cutelystVersion()), QLatin1String(qVersion()))
-                                     .toLatin1().constData();
+            qCInfo(CUTELYST_CORE) << qPrintable(QString::fromLatin1("%1 powered by Cutelyst %2, Qt %3.")
+                                                .arg(QCoreApplication::applicationName(),
+                                                     QLatin1String(Application::cutelystVersion()),
+                                                     QLatin1String(qVersion())));
         }
 
         Q_EMIT preForked(this);
@@ -371,22 +359,19 @@ bool Application::setup(Engine *engine)
     return false;
 }
 
-void Application::handleRequest(Request *req)
-{
-    delete handleRequest2(req);
-}
-
-Context *Application::handleRequest2(Request *req)
+void Application::handleRequest(EngineRequest *request)
 {
     Q_D(Application);
 
     Engine *engine = d->engine;
+
     auto priv = new ContextPrivate(this, engine, d->dispatcher, d->plugins);
     auto c = new Context(priv);
-    priv->response = new Response(c, engine, d->headers);
-    priv->request = req;
-    priv->requestPtr = req->d_ptr->requestPtr;
-    req->setParent(c);
+
+    request->context = c;
+    priv->engineRequest = request;
+    priv->response = new Response(d->headers, request);
+    priv->request = new Request(request);
 
     Stats *stats = nullptr;
     if (d->useStats) {
@@ -401,7 +386,7 @@ Context *Application::handleRequest2(Request *req)
     if (!skipMethod) {
         static bool log = CUTELYST_REQUEST().isEnabled(QtDebugMsg);
         if (log) {
-            d->logRequest(req);
+            d->logRequest(priv->request);
         }
 
         d->dispatcher->prepareAction(c);
@@ -413,17 +398,16 @@ Context *Application::handleRequest2(Request *req)
         Q_EMIT afterDispatch(c);
     }
 
-    engine->finalize(c);
+    request->finalize();
 
     if (stats) {
         qCDebug(CUTELYST_STATS, "Response Code: %d; Content-Type: %s; Content-Length: %s",
                 c->response()->status(),
-                c->response()->headers().header(QStringLiteral("CONTENT_TYPE"), QStringLiteral("unknown")).toLatin1().data(),
-                c->response()->headers().header(QStringLiteral("CONTENT_LENGTH"), QStringLiteral("unknown")).toLatin1().data());
+                qPrintable(c->response()->headers().header(QStringLiteral("CONTENT_TYPE"), QStringLiteral("unknown"))),
+                qPrintable(c->response()->headers().header(QStringLiteral("CONTENT_LENGTH"), QStringLiteral("unknown"))));
 
-        RequestPrivate *reqPriv = req->d_ptr;
-        reqPriv->endOfRequest = engine->time();
-        double enlapsed = (reqPriv->endOfRequest - reqPriv->startOfRequest) / 1000000.0;
+        quint64 endOfRequest = engine->time();
+        double enlapsed = (endOfRequest - request->startOfRequest) / 1000000.0;
         QString average;
         if (enlapsed == 0.0) {
             average = QStringLiteral("??");
@@ -431,13 +415,10 @@ Context *Application::handleRequest2(Request *req)
             average = QString::number(1.0 / enlapsed, 'f');
             average.truncate(average.size() - 3);
         }
-        qCInfo(CUTELYST_STATS) << QStringLiteral("Request took: %1s (%2/s)\n%3")
-                                  .arg(QString::number(enlapsed, 'f'), average, QString::fromLatin1(stats->report()))
-                                  .toLatin1().constData();
+        qCInfo(CUTELYST_STATS) << qPrintable(QStringLiteral("Request took: %1s (%2/s)\n%3")
+                                             .arg(QString::number(enlapsed, 'f'), average, QString::fromLatin1(stats->report())));
         delete stats;
     }
-
-    return c;
 }
 
 bool Application::enginePostFork()
@@ -547,6 +528,102 @@ QString Application::translate(const QLocale &locale, const char *context, const
     return result;
 }
 
+void Application::loadTranslations(const QString &filename, const QString &directory, const QString &prefix, const QString &suffix)
+{
+    loadTranslationsFromDir(filename, directory, prefix, suffix);
+}
+
+QVector<QLocale> Application::loadTranslationsFromDir(const QString &filename, const QString &directory, const QString &prefix, const QString &suffix)
+{
+    QVector<QLocale> locales;
+
+    if (Q_LIKELY(!filename.isEmpty())) {
+        const QString _dir = directory.isEmpty() ? QStringLiteral(I18NDIR) : directory;
+        const QDir i18nDir(_dir);
+        if (Q_LIKELY(i18nDir.exists())) {
+            const QString _prefix = prefix.isEmpty() ? QStringLiteral(".") : prefix;
+            const QString _suffix = suffix.isEmpty() ? QStringLiteral(".qm") : suffix;
+            const QStringList namesFilter = QStringList({filename + _prefix + QLatin1Char('*') + _suffix});
+
+            const QFileInfoList tsFiles = i18nDir.entryInfoList(namesFilter, QDir::Files);
+            if (Q_LIKELY(!tsFiles.empty())) {
+                locales.reserve(tsFiles.size());
+                for (const QFileInfo &ts : tsFiles) {
+                    const QString fn = ts.fileName();
+                    const int prefIdx = fn.indexOf(_prefix);
+                    const QString locString = fn.mid(prefIdx + _prefix.length(), fn.length() - prefIdx - _suffix.length() - _prefix.length());
+                    QLocale loc(locString);
+                    if (Q_LIKELY(loc.language() != QLocale::C)) {
+                        auto trans = new QTranslator(this);
+                        if (Q_LIKELY(trans->load(loc, filename, _prefix, _dir))) {
+                            addTranslator(loc, trans);
+                            locales.append(loc);
+                            qCDebug(CUTELYST_CORE) << "Loaded translations for" << loc << "from" << ts.absoluteFilePath();
+                        } else {
+                            delete trans;
+                            qCWarning(CUTELYST_CORE) << "Can not load translations for" << loc << "from" << ts.absoluteFilePath();
+                        }
+                    } else {
+                        qCWarning(CUTELYST_CORE) << "Can not load translations for invalid locale string" << locString;
+                    }
+                }
+                locales.squeeze();
+            } else {
+                qCWarning(CUTELYST_CORE) << "Can not find translation files for" << filename << "in directory" << _dir;
+            }
+        } else {
+            qCWarning(CUTELYST_CORE) << "Can not load translations from not existing directory:" << _dir;
+        }
+    } else {
+        qCWarning(CUTELYST_CORE) << "Can not load translations for empty file name.";
+    }
+
+    return locales;
+}
+
+QVector<QLocale> Application::loadTranslationsFromDirs(const QString &directory, const QString &filename)
+{
+    QVector<QLocale> locales;
+
+    if (Q_LIKELY(!directory.isEmpty() && !filename.isEmpty())) {
+        const QDir dir(directory);
+        if (Q_LIKELY(dir.exists())) {
+            const auto dirs = dir.entryList(QDir::AllDirs);
+            if (Q_LIKELY(!dirs.empty())) {
+                locales.reserve(dirs.size());
+                for (const QString &subDir : dirs) {
+                    const QString relFn = subDir + QLatin1Char('/') + filename;
+                    if (dir.exists(relFn)) {
+                        const QLocale l(subDir);
+                        if (Q_LIKELY(l.language() != QLocale::C)) {
+                            auto trans = new QTranslator(this);
+                            const QFileInfo fi(dir, relFn);
+                            if (Q_LIKELY(trans->load(l, fi.baseName(), QString(), fi.absolutePath(), fi.suffix()))) {
+                                addTranslator(l, trans);
+                                locales.append(l);
+                                qCDebug(CUTELYST_CORE) << "Loaded translations for" << l << "from" << fi.absoluteFilePath();
+                            } else {
+                                delete trans;
+                                qCWarning(CUTELYST_CORE) << "Can not load translations for" << l << "from" << fi.absoluteFilePath();
+                            }
+                        } else {
+                            qCWarning(CUTELYST_CORE) << "Can not load translations for invalid locale string:" << subDir;
+                        }
+                    }
+                }
+                locales.squeeze();
+            } else {
+                qCWarning(CUTELYST_CORE) << "Can not find locale dirs under" << directory;
+            }
+        } else {
+            qCWarning(CUTELYST_CORE) << "Can not load translations from not existing directory:" << directory;
+        }
+    } else {
+        qCWarning(CUTELYST_CORE) << "Can not load translations for empty file name or directory name";
+    }
+
+    return locales;
+}
 
 void Cutelyst::ApplicationPrivate::setupHome()
 {
@@ -601,12 +678,12 @@ void Cutelyst::ApplicationPrivate::logRequest(Request *req)
 
     ParamsMultiMap params = req->queryParameters();
     if (!params.isEmpty()) {
-        logRequestParameters(params, QStringLiteral("Query Parameters are:"));
+        logRequestParameters(params, QLatin1String("Query Parameters are:"));
     }
 
     params = req->bodyParameters();
     if (!params.isEmpty()) {
-        logRequestParameters(params, QStringLiteral("Body Parameters are:"));
+        logRequestParameters(params, QLatin1String("Body Parameters are:"));
     }
 
     const auto uploads = req->uploads();
@@ -624,8 +701,8 @@ void Cutelyst::ApplicationPrivate::logRequestParameters(const ParamsMultiMap &pa
         ++it;
     }
     qCDebug(CUTELYST_REQUEST) << Utils::buildTable(table, {
-                                                       QStringLiteral("Parameter"),
-                                                       QStringLiteral("Value"),
+                                                       QLatin1String("Parameter"),
+                                                       QLatin1String("Value"),
                                                    },
                                                    title).constData();
 }
@@ -641,12 +718,46 @@ void Cutelyst::ApplicationPrivate::logRequestUploads(const QVector<Cutelyst::Upl
                      });
     }
     qCDebug(CUTELYST_REQUEST) << Utils::buildTable(table, {
-                                                       QStringLiteral("Parameter"),
-                                                       QStringLiteral("Filename"),
-                                                       QStringLiteral("Type"),
-                                                       QStringLiteral("Size"),
+                                                       QLatin1String("Parameter"),
+                                                       QLatin1String("Filename"),
+                                                       QLatin1String("Type"),
+                                                       QLatin1String("Size"),
                                                    },
-                                                   QStringLiteral("File Uploads are:")).constData();
+                                                   QLatin1String("File Uploads are:")).constData();
+}
+
+Component *ApplicationPrivate::createComponentPlugin(const QString &name, QObject *parent, const QString &directory)
+{
+    Component *component = nullptr;
+
+    QDir pluginsDir(directory);
+    QPluginLoader loader;
+    ComponentFactory *factory = nullptr;
+    const auto plugins = pluginsDir.entryList(QDir::Files);
+    for (const QString &fileName : plugins) {
+        loader.setFileName(pluginsDir.absoluteFilePath(fileName));
+        const QJsonObject json = loader.metaData()[QLatin1String("MetaData")].toObject();
+        if (json[QLatin1String("name")].toString() == name) {
+            QObject *plugin = loader.instance();
+            if (plugin) {
+                factory = qobject_cast<ComponentFactory *>(plugin);
+                if (!factory) {
+                    qCCritical(CUTELYST_CORE) << "Could not create a factory for" << loader.fileName();
+                } else {
+                    component = factory->createComponent(parent);
+                }
+                break;
+            } else {
+                qCCritical(CUTELYST_CORE) << "Could not load plugin" << loader.fileName() << loader.errorString();
+            }
+        }
+    }
+
+    if (factory) {
+        factories.insert(name, factory);
+    }
+
+    return component;
 }
 
 #include "moc_application.cpp"

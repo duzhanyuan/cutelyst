@@ -1,20 +1,19 @@
 /*
- * Copyright (C) 2016-2017 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2016-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #include "cwsgiengine.h"
 
@@ -30,6 +29,7 @@
 
 #include "protocolwebsocket.h"
 #include "protocolhttp.h"
+#include "protocolhttp2.h"
 #include "protocolfastcgi.h"
 
 #ifdef Q_OS_UNIX
@@ -37,6 +37,7 @@
 #endif
 
 #include <typeinfo>
+#include <iostream>
 
 #include <Cutelyst/Context>
 #include <Cutelyst/Response>
@@ -47,7 +48,7 @@
 
 #include <QLoggingCategory>
 
-Q_LOGGING_CATEGORY(CWSGI_ENGINE, "cwsgi.engine")
+Q_LOGGING_CATEGORY(CWSGI_ENGINE, "cwsgi.engine", QtWarningMsg)
 
 using namespace CWSGI;
 using namespace Cutelyst;
@@ -82,6 +83,13 @@ CWsgiEngine::CWsgiEngine(Application *localApp, int workerCore, const QVariantMa
     }
 }
 
+CWsgiEngine::~CWsgiEngine()
+{
+    delete m_protoFcgi;
+    delete m_protoHttp;
+    delete m_protoHttp2;
+}
+
 int CWsgiEngine::workerId() const
 {
     return m_workerId;
@@ -100,16 +108,21 @@ void CWsgiEngine::setServers(const std::vector<QObject *> &servers)
                 }
 
                 if (server->protocol()->type() == Protocol::Http11) {
-                    if (!m_protoHttp) {
-                        m_protoHttp = new ProtocolHttp(m_wsgi);
-                    }
-                    server->setProtocol(m_protoHttp);
+                    server->setProtocol(getProtoHttp());
+                } else if (server->protocol()->type() == Protocol::Http2) {
+                    server->setProtocol(getProtoHttp2());
                 } else if (server->protocol()->type() == Protocol::FastCGI1) {
-                    if (!m_protoFcgi) {
-                        m_protoFcgi = new ProtocolFastCGI(m_wsgi);
-                    }
-                    server->setProtocol(m_protoFcgi);
+                    server->setProtocol(getProtoFastCgi());
                 }
+
+#ifndef QT_NO_SSL
+                if (m_wsgi->httpsH2()) {
+                    auto sslServer = qobject_cast<TcpSslServer *>(server);
+                    if (sslServer) {
+                        sslServer->setHttp2Protocol(getProtoHttp2());
+                    }
+                }
+#endif // QT_NO_SSL
             }
         }
 
@@ -123,15 +136,11 @@ void CWsgiEngine::setServers(const std::vector<QObject *> &servers)
                 }
 
                 if (server->protocol()->type() == Protocol::Http11) {
-                    if (!m_protoHttp) {
-                        m_protoHttp = new ProtocolHttp(m_wsgi);
-                    }
-                    server->setProtocol(m_protoHttp);
+                    server->setProtocol(getProtoHttp());
+                } else if (server->protocol()->type() == Protocol::Http2) {
+                    server->setProtocol(getProtoHttp2());
                 } else if (server->protocol()->type() == Protocol::FastCGI1) {
-                    if (!m_protoFcgi) {
-                        m_protoFcgi = new ProtocolFastCGI(m_wsgi);
-                    }
-                    server->setProtocol(m_protoFcgi);
+                    server->setProtocol(getProtoFastCgi());
                 }
             }
         }
@@ -142,20 +151,19 @@ void CWsgiEngine::postFork(int workerId)
 {
     m_workerId = workerId;
 
-    if (!postForkApplication()) {
-        // CHEAP
-        Q_EMIT shutdown();
-        return;
-    }
-
 #ifdef Q_OS_UNIX
     UnixFork::setSched(m_wsgi, workerId, workerCore());
 #endif
 
-    Q_EMIT started();
+    if (Q_LIKELY(postForkApplication())) {
+        Q_EMIT started();
+    } else {
+        std::cerr << "Application failed to post fork, cheaping worker: " << workerId << ", core: " << workerCore() << std::endl;
+        Q_EMIT shutdown();
+    }
 }
 
-QByteArray dateHeader()
+QByteArray CWsgiEngine::dateHeader()
 {
     QString ret;
     ret = QLatin1String("\r\nDate: ") + QLocale::c().toString(QDateTime::currentDateTimeUtc(),
@@ -163,134 +171,41 @@ QByteArray dateHeader()
     return ret.toLatin1();
 }
 
-bool CWsgiEngine::finalizeHeadersWrite(Context *c, quint16 status, const Headers &headers, void *engineData)
+Protocol *CWsgiEngine::getProtoHttp()
 {
-    auto sock = static_cast<TcpSocket*>(engineData);
-    if (sock) {
-        if (m_lastDateTimer.hasExpired(1000)) {
-            m_lastDate = dateHeader();
-            m_lastDateTimer.restart();
+    if (!m_protoHttp) {
+        if (m_wsgi->upgradeH2c()) {
+            m_protoHttp = new ProtocolHttp(m_wsgi, getProtoHttp2());
+        } else {
+            m_protoHttp = new ProtocolHttp(m_wsgi);
         }
-
-        return sock->proto->sendHeaders(sock, sock, status, m_lastDate, headers);
     }
-    return false;
+    return m_protoHttp;
 }
 
-qint64 CWsgiEngine::doWrite(Context *c, const char *data, qint64 len, void *engineData)
+ProtocolHttp2 *CWsgiEngine::getProtoHttp2()
 {
-    auto sock = static_cast<TcpSocket*>(engineData);
-    auto io = static_cast<QIODevice*>(engineData);
-    //    qDebug() << Q_FUNC_INFO << QByteArray(data,len);
-    qint64 ret = sock->proto->sendBody(io, sock, data, len);
-    //    conn->waitForBytesWritten(200);
-    return ret;
+    if (!m_protoHttp2) {
+        m_protoHttp2 = new ProtocolHttp2(m_wsgi);
+    }
+    return m_protoHttp2;
 }
 
-bool CWsgiEngine::webSocketHandshakeDo(Context *c, const QString &key, const QString &origin, const QString &protocol, void *engineData)
+Protocol *CWsgiEngine::getProtoFastCgi()
 {
-    auto sock = static_cast<TcpSocket*>(engineData);
-    if (sock->headerConnection == Socket::HeaderConnectionUpgrade) {
-        return true;
+    if (!m_protoFcgi) {
+        m_protoFcgi = new ProtocolFastCGI(m_wsgi);
     }
-
-    if (sock->proto->type() != Protocol::Http11) {
-        qCWarning(CWSGI_ENGINE) << "Upgrading a connection to websocket is only supported with the HTTP protocol" << typeid(sock->proto).name();
-        return false;
-    }
-
-    const Headers requestHeaders = c->request()->headers();
-    Response *response = c->response();
-    Headers &headers = response->headers();
-
-    response->setStatus(Response::SwitchingProtocols);
-    headers.setHeader(QStringLiteral("UPGRADE"), QStringLiteral("WebSocket"));
-    headers.setHeader(QStringLiteral("CONNECTION"), QStringLiteral("Upgrade"));
-    const QString localOrigin = origin.isEmpty() ? requestHeaders.header(QStringLiteral("ORIGIN")) : origin;
-    if (localOrigin.isEmpty()) {
-        headers.setHeader(QStringLiteral("SEC_WEBSOCKET_ORIGIN"), QStringLiteral("*"));
-    } else {
-        headers.setHeader(QStringLiteral("SEC_WEBSOCKET_ORIGIN"), localOrigin);
-    }
-
-    const QString wsProtocol = protocol.isEmpty() ? requestHeaders.header(QStringLiteral("SEC_WEBSOCKET_PROTOCOL")) : protocol;
-    if (!wsProtocol.isEmpty()) {
-        headers.setHeader(QStringLiteral("SEC_WEBSOCKET_PROTOCOL"), wsProtocol);
-    }
-
-    const QString localKey = key.isEmpty() ? requestHeaders.header(QStringLiteral("SEC_WEBSOCKET_KEY")) : key;
-    const QString wsKey = localKey + QLatin1String("258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
-    if (wsKey.length() == 36) {
-        qCWarning(CWSGI_ENGINE) << "Missing websocket key";
-        return false;
-    }
-
-    const QByteArray wsAccept = QCryptographicHash::hash(wsKey.toLatin1(), QCryptographicHash::Sha1).toBase64();
-    headers.setHeader(QStringLiteral("SEC_WEBSOCKET_ACCEPT"), QString::fromLatin1(wsAccept));
-
-    sock->headerConnection = Socket::HeaderConnectionUpgrade;
-    sock->websocketContext = c;
-
-    return finalizeHeadersWrite(c, Response::SwitchingProtocols, headers, engineData);
-}
-
-bool CWsgiEngine::webSocketSendTextMessage(Context *c, const QString &message)
-{
-    auto sock = static_cast<TcpSocket*>(c->engineData());
-    if (sock->headerConnection != Socket::HeaderConnectionUpgrade) {
-        return false;
-    }
-
-    const QByteArray rawMessage = message.toUtf8();
-    const QByteArray headers = ProtocolWebSocket::createWebsocketHeader(Socket::OpCodeText, rawMessage.size());
-    doWrite(c, headers.data(), headers.size(), sock);
-    return doWrite(c, rawMessage.data(), rawMessage.size(), sock) == rawMessage.size();
-}
-
-bool CWsgiEngine::webSocketSendBinaryMessage(Context *c, const QByteArray &message)
-{
-    auto sock = static_cast<TcpSocket*>(c->engineData());
-    if (sock->headerConnection != Socket::HeaderConnectionUpgrade) {
-        return false;
-    }
-
-    const QByteArray headers = ProtocolWebSocket::createWebsocketHeader(Socket::OpCodeBinary, message.size());
-    doWrite(c, headers.data(), headers.size(), sock);
-    return doWrite(c, message.data(), message.size(), sock) == message.size();
-}
-
-bool CWsgiEngine::webSocketSendPing(Context *c, const QByteArray &payload)
-{
-    auto sock = static_cast<TcpSocket*>(c->engineData());
-    if (sock->headerConnection != Socket::HeaderConnectionUpgrade) {
-        return false;
-    }
-
-    const QByteArray rawMessage = payload.left(125);
-    const QByteArray headers = ProtocolWebSocket::createWebsocketHeader(Socket::OpCodePing, rawMessage.size());
-    doWrite(c, headers.data(), headers.size(), sock);
-    return doWrite(c, rawMessage.data(), rawMessage.size(), sock) == rawMessage.size();
-}
-
-bool CWsgiEngine::webSocketClose(Context *c, quint16 code, const QString &reason)
-{
-    auto sock = static_cast<TcpSocket*>(c->engineData());
-    if (sock->headerConnection != Socket::HeaderConnectionUpgrade) {
-        return false;
-    }
-
-    const QByteArray reply = ProtocolWebSocket::createWebsocketCloseReply(reason, code);
-    return doWrite(c, reply.data(), reply.size(), sock) == reply.size();
+    return m_protoFcgi;
 }
 
 bool CWsgiEngine::init()
 {
-    if (!initApplication()) {
-        qCCritical(CWSGI_ENGINE) << "Failed to init application, cheaping...";
-        return false;
+    if (Q_LIKELY(initApplication())) {
+        return true;
     }
 
-    return true;
+    return false;
 }
 
 #include "moc_cwsgiengine.cpp"

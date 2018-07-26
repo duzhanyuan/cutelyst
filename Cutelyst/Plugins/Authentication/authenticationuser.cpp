@@ -1,25 +1,24 @@
 /*
- * Copyright (C) 2013-2015 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2017 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #include "authenticationuser.h"
 
-#include <QtCore/QDataStream>
+#include <QDataStream>
+#include <QDebug>
 
 using namespace Cutelyst;
 
@@ -28,59 +27,66 @@ AuthenticationUser::AuthenticationUser()
 
 }
 
-AuthenticationUser::AuthenticationUser(const QString &id) :
-    m_id(id)
+AuthenticationUser::AuthenticationUser(const QVariant &id)
 {
-
+    setId(id);
 }
 
 AuthenticationUser::~AuthenticationUser()
 {
 }
 
-QString AuthenticationUser::id() const
+QVariant AuthenticationUser::id() const
 {
-    return m_id;
+    return m_data.value(QStringLiteral("id")).toString();
 }
 
-void AuthenticationUser::setId(const QString &id)
+void AuthenticationUser::setId(const QVariant &id)
 {
-    m_id = id;
+    m_data.insert(QStringLiteral("id"), id);
 }
 
 bool AuthenticationUser::isNull() const
 {
-    return m_id.isEmpty();
+    return m_data.isEmpty();
 }
 
-AuthenticationRealm *AuthenticationUser::authRealm()
+QString AuthenticationUser::authRealm()
 {
-    return m_realm;
+    return m_data.value(QStringLiteral("authRealm")).toString();
 }
 
-void AuthenticationUser::setAuthRealm(AuthenticationRealm *authRealm)
+void AuthenticationUser::setAuthRealm(const QString &authRealm)
 {
-    m_realm = authRealm;
-}
-
-bool AuthenticationUser::checkPassword(const QString &password) const
-{
-    Q_UNUSED(password)
-    return false;
+    m_data.insert(QStringLiteral("authRealm"), authRealm);
 }
 
 QDataStream &operator<<(QDataStream &out, const AuthenticationUser &user)
 {
-    out << user.id() << static_cast<QVariantMap>(user);
+    out << user.data();
     return out;
 }
 
 QDataStream &operator>>(QDataStream &in, AuthenticationUser &user)
 {
-    QString id;
     QVariantMap map;
-    in >> id >> map;
-    user.setId(id);
-    user.swap(map);
+    in >> map;
+    user.setData(map);
     return in;
 }
+
+QDebug operator<<(QDebug dbg, const AuthenticationUser &user)
+{
+    const QVariantMap map = user.data();
+    const bool oldSetting = dbg.autoInsertSpaces();
+    dbg.nospace() << "AuthenticationUser(";
+    for (auto it = map.constBegin();
+         it != map.constEnd(); ++it) {
+        dbg << '(' << it.key() << ", " << it.value() << ')';
+    }
+    dbg << ')';
+    dbg.setAutoInsertSpaces(oldSetting);
+    return dbg.maybeSpace();
+}
+
+#include "moc_authenticationuser.cpp"

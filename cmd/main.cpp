@@ -5,7 +5,7 @@
 #include <QLocale>
 #include <QTranslator>
 #include <QLibraryInfo>
-#include <QDebug>
+#include <QTextStream>
 
 #include <QRegularExpression>
 #include <QStringBuilder>
@@ -13,7 +13,7 @@
 
 #include <wsgi/wsgi.h>
 
-#include <ostream>
+#include <iostream>
 
 #ifdef Q_OS_UNIX
 #include <utime.h>
@@ -22,8 +22,8 @@
 #include "config.h"
 #include "helper.h"
 
-#define OUT_EXISTS  "  exists"
-#define OUT_CREATED " created"
+#define OUT_EXISTS  "  exists "
+#define OUT_CREATED " created "
 
 bool buildControllerHeader(const QString &filename, const QString &controllerName, bool helpers);
 bool buildControllerImplementation(const QString &filename, const QString &controllerName, bool helpers);
@@ -31,13 +31,13 @@ bool buildControllerImplementation(const QString &filename, const QString &contr
 bool createController(const QString &controllerName)
 {
     if (controllerName.contains(QRegularExpression(QStringLiteral("\\W"))) || controllerName.contains(QRegularExpression(QStringLiteral("^\\d")))) {
-        qDebug() << "Error: Invalid Controller name.";
+        std::cerr << qUtf8Printable(QCoreApplication::translate("cutelystcmd", "Error: Invalid Controller name.")) << std::endl;
         return false;
     }
 
     QDir projectDir;
     if (!Helper::findProjectDir(QDir::current(), &projectDir)) {
-        qDebug() << "Error: failed to find project";
+        std::cerr << qUtf8Printable(QCoreApplication::translate("cutelystcmd", "Error: failed to find project")) << std::endl;
         return false;
     }
 
@@ -58,7 +58,7 @@ bool createController(const QString &controllerName)
     utime(projectDir.absoluteFilePath(QStringLiteral("CMakeLists.txt")).toLatin1().data(), NULL);
 #endif
 
-    qDebug() << "Now, on your application class include and instantiate the controller.";
+    std::cout << qUtf8Printable(QCoreApplication::translate("cutelystcmd", "Now, on your application class include and instantiate the controller.")) << std::endl;
 
     return true;
 }
@@ -67,7 +67,7 @@ bool buildApplicationImplementation(const QString &filename, const QString &appN
 {
     QFile data(filename);
     if (data.exists()) {
-        qDebug() << OUT_EXISTS << filename;
+        std::cerr << OUT_EXISTS << qPrintable(filename) << std::endl;
         return true;
     }
 
@@ -75,8 +75,6 @@ bool buildApplicationImplementation(const QString &filename, const QString &appN
         QTextStream out(&data);
         QFileInfo fileInfo(filename);
         out << "#include \"" << fileInfo.baseName() << ".h\"" << "\n";
-        out << "\n";
-        out << "#include <Cutelyst/Plugins/StaticSimple/staticsimple.h>" << "\n";
         out << "\n";
         out << "#include \"root.h\"" << "\n";
         out << "\n";
@@ -94,17 +92,15 @@ bool buildApplicationImplementation(const QString &filename, const QString &appN
         out << "{" << "\n";
         out << "    new Root(this);" << "\n";
         out << "\n";
-        out << "    new StaticSimple(this);" << "\n";
-        out << "\n";
         out << "    return true;" << "\n";
         out << "}" << "\n";
         out << "\n";
 
-        qDebug() << OUT_CREATED << filename;
+        std::cout << OUT_CREATED << qPrintable(filename) << std::endl;
 
         return true;
     }
-    qDebug() << "Error: failed to create file" << filename;
+    std::cerr << qUtf8Printable(QCoreApplication::translate("cutelystcmd", "Error: failed to create file")) << qPrintable(filename) << std::endl;
 
     return false;
 }
@@ -113,7 +109,7 @@ bool buildApplicationHeader(const QString &filename, const QString &appName)
 {
     QFile data(filename);
     if (data.exists()) {
-        qDebug() << OUT_EXISTS << filename;
+        std::cout << OUT_EXISTS << qPrintable(filename) << std::endl;
         return true;
     }
 
@@ -140,11 +136,11 @@ bool buildApplicationHeader(const QString &filename, const QString &appName)
         out << "#endif //" << appName.toUpper() << "_H" << "\n";
         out << "\n";
 
-        qDebug() << OUT_CREATED << filename;
+        std::cout << OUT_CREATED << qPrintable(filename) << std::endl;
 
         return true;
     }
-    qDebug() << "Error: failed to create file" << filename;
+    std::cerr << qUtf8Printable(QCoreApplication::translate("cutelystcmd", "Error: failed to create file")) << qPrintable(filename) << std::endl;
 
     return false;
 }
@@ -153,7 +149,7 @@ bool buildControllerImplementation(const QString &filename, const QString &contr
 {
     QFile data(filename);
     if (data.exists()) {
-        qDebug() << OUT_EXISTS << filename;
+        std::cout << OUT_EXISTS << qPrintable(filename) << std::endl;
         return true;
     }
 
@@ -190,11 +186,11 @@ bool buildControllerImplementation(const QString &filename, const QString &contr
             out << "\n";
         }
 
-        qDebug() << OUT_CREATED << filename;
+        std::cout << OUT_CREATED << qPrintable(filename) << std::endl;
 
         return true;
     }
-    qDebug() << "Error: failed to create file" << filename;
+    std::cerr << qUtf8Printable(QCoreApplication::translate("cutelystcmd", "Error: failed to create file")) << qPrintable(filename) << std::endl;
 
     return false;
 }
@@ -203,7 +199,7 @@ bool buildControllerHeader(const QString &filename, const QString &controllerNam
 {
     QFile data(filename);
     if (data.exists()) {
-        qDebug() << OUT_EXISTS << filename;
+        std::cout << OUT_EXISTS << qPrintable(filename) << std::endl;
         return true;
     }
 
@@ -242,11 +238,11 @@ bool buildControllerHeader(const QString &filename, const QString &controllerNam
         out << "#endif //" << controllerName.toUpper() << "_H" << "\n";
         out << "\n";
 
-        qDebug() << OUT_CREATED << filename;
+        std::cout << OUT_CREATED << qPrintable(filename) << std::endl;
 
         return true;
     }
-    qDebug() << "Error: failed to create file" << filename;
+    std::cerr << qUtf8Printable(QCoreApplication::translate("cutelystcmd", "Error: failed to create file")) << qPrintable(filename) << std::endl;
 
     return false;
 }
@@ -255,7 +251,7 @@ bool buildSrcCMakeLists(const QString &name, const QString &appName)
 {
     QFile data(name);
     if (data.exists()) {
-        qDebug() << OUT_EXISTS << name;
+        std::cout << OUT_EXISTS << qPrintable(name) << std::endl;
         return true;
     }
 
@@ -274,17 +270,16 @@ bool buildSrcCMakeLists(const QString &name, const QString &appName)
         out << "# Link to Cutelyst" << "\n";
         out << "target_link_libraries(" << appName << "\n";
         out << "    Cutelyst::Core" << "\n";
-        out << "    Cutelyst::StaticSimple" << "\n";
         out << "    Qt5::Core" << "\n";
         out << "    Qt5::Network" << "\n";
         out << ")" << "\n";
         out << "\n";
 
-        qDebug() << OUT_CREATED << name;
+        std::cout << OUT_CREATED << qPrintable(name) << std::endl;
 
         return true;
     }
-    qDebug() << "Error: failed to create file" << name;
+    std::cerr << qUtf8Printable(QCoreApplication::translate("cutelystcmd", "Error: failed to create file")) << qPrintable(name) << std::endl;
 
     return false;
 }
@@ -293,7 +288,7 @@ bool buildProjectCMakeLists(const QString &name, const QString &appName)
 {
     QFile data(name);
     if (data.exists()) {
-        qDebug() << OUT_EXISTS << name;
+        std::cout << OUT_EXISTS << qPrintable(name) << std::endl;
         return true;
     }
 
@@ -313,7 +308,7 @@ bool buildProjectCMakeLists(const QString &name, const QString &appName)
         out << "  endif()\n";
         out << "endif()\n\n";
         out << "find_package(Qt5 COMPONENTS Core Network REQUIRED)" << "\n";
-        out << "find_package(CutelystQt5 REQUIRED)" << "\n";
+        out << "find_package(Cutelyst2Qt5 REQUIRED)" << "\n";
         out << "\n";
         out << "# Auto generate moc files" << "\n";
         out << "set(CMAKE_AUTOMOC ON)" << "\n";
@@ -322,40 +317,37 @@ bool buildProjectCMakeLists(const QString &name, const QString &appName)
         out << "# to always look for includes there:" << "\n";
         out << "set(CMAKE_INCLUDE_CURRENT_DIR ON)" << "\n";
         out << "\n";
-        out << "# Enable C++11 features" << "\n";
-        out << "add_definitions(-std=c++11)" << "\n";
-        out << "\n";
         out << "include_directories(" << "\n";
         out << "    ${CMAKE_SOURCE_DIR}" << "\n";
         out << "    ${CMAKE_CURRENT_BINARY_DIR}" << "\n";
-        out << "    ${CutelystQt5_INCLUDE_DIR}" << "\n";
+        out << "    ${Cutelyst2Qt5_INCLUDE_DIR}" << "\n";
         out << ")" << "\n";
         out << "\n";
         out << "file(GLOB_RECURSE TEMPLATES_SRC root/*)" << "\n";
         out << "\n";
         out << "add_subdirectory(src)" << "\n";
 
-        qDebug() << OUT_CREATED << name;
+        std::cout << OUT_CREATED << qPrintable(name) << std::endl;
 
         return true;
     }
-    qDebug() << "Error: failed to create file" << name;
+    std::cerr << qUtf8Printable(QCoreApplication::translate("cutelystcmd", "Error: failed to create file")) << qPrintable(name) << std::endl;
 
     return false;
 }
 
 bool createDir(const QDir &parentDir, const QString &name)
 {
-    QString newDir = parentDir.relativeFilePath(name);
+    const QString newDir = parentDir.relativeFilePath(name);
     if (parentDir.exists(name)) {
-        qDebug() << OUT_EXISTS << newDir;
+        std::cout << OUT_EXISTS << qPrintable(newDir) << std::endl;
         return true;
     } else if (parentDir.mkdir(name)) {
-        qDebug() << OUT_CREATED << newDir;
+        std::cout << OUT_CREATED << qPrintable(newDir) << std::endl;
         return true;
     }
 
-    qDebug() << "Error: failed to create directory:" << newDir;
+    std::cerr << qUtf8Printable(QCoreApplication::translate("cutelystcmd", "Error: failed to create directory:")) << qPrintable(newDir) << std::endl;
     return false;
 }
 
@@ -364,11 +356,11 @@ bool createApplication(const QString &name)
     QString nameWithUnderscore = name;
     nameWithUnderscore.replace(QLatin1Char('-'), QLatin1Char('_'));
     if (nameWithUnderscore.contains(QRegularExpression(QStringLiteral("\\W"))) || nameWithUnderscore.contains(QRegularExpression(QStringLiteral("^\\d")))) {
-        qDebug() << "Error: Invalid Application name.";
+        std::cerr << qUtf8Printable(QCoreApplication::translate("cutelystcmd", "Error: Invalid Application name.")) << std::endl;
         return false;
     }
 
-    QDir currentDir = QDir::current();
+    const QDir currentDir = QDir::current();
 
     if (!createDir(currentDir, name)) {
         return false;
@@ -381,7 +373,6 @@ bool createApplication(const QString &name)
     if (!createDir(currentDir, name % QStringLiteral("/build"))) {
         return false;
     }
-
 
     if (!createDir(currentDir, name % QStringLiteral("/root"))) {
         return false;
@@ -417,7 +408,7 @@ bool createApplication(const QString &name)
         return false;
     }
 
-    qDebug() << "Change to application directory, then build directory and Run \"cmake ..\" to make sure your install is complete";
+    std::cout << qUtf8Printable(QCoreApplication::translate("cutelystcmd", "Change to application directory, then build directory and Run \"cmake ..\" to make sure your install is complete")) << std::endl;
 
     return true;
 }
@@ -442,39 +433,43 @@ int main(int argc, char *argv[])
                       QLibraryInfo::location(QLibraryInfo::TranslationsPath));
     QCoreApplication::installTranslator(&qtTranslator);
 
+    QTranslator appTranslator;
+    if (appTranslator.load(QLocale(), QStringLiteral("cutelystcmd"), QStringLiteral("."), QStringLiteral(I18NDIR))) {
+        QCoreApplication::installTranslator(&appTranslator);
+    }
 
     QCommandLineParser parser;
-    parser.setApplicationDescription(QStringLiteral("Cutelyst DEVELOPER helper, it can create a skeleton for a new application, controllers and start your application"));
+    parser.setApplicationDescription(QCoreApplication::translate("cutelystcmd", "Cutelyst DEVELOPER helper, it can create a skeleton for a new application, controllers and start your application"));
     parser.addHelpOption();
     parser.addVersionOption();
 
     QCommandLineOption appName(QStringLiteral("create-app"),
-                               QStringLiteral("Creates a new Cutelyst application"),
+                               QCoreApplication::translate("cutelystcmd", "Creates a new Cutelyst application"),
                                QStringLiteral("app_name"));
     parser.addOption(appName);
 
     QCommandLineOption controller(QStringLiteral("controller"),
-                                  QStringLiteral("Name of the Controller application to create"),
+                                  QCoreApplication::translate("cutelystcmd", "Name of the Controller application to create"),
                                   QStringLiteral("controller_name"));
 
     parser.addOption(controller);
 
     QCommandLineOption server(QStringLiteral("server"),
-                              QStringLiteral("Starts a HTTP server"));
+                              QCoreApplication::translate("cutelystcmd", "Starts a HTTP server"));
     parser.addOption(server);
 
     QCommandLineOption appFile(QStringLiteral("app-file"),
-                               QStringLiteral("Application file of to use with the server (usually in build/src/lib*.so), if not set it will try to auto-detect"),
+                               QCoreApplication::translate("cutelystcmd", "Application file of to use with the server (usually in build/src/lib*.so), if not set it will try to auto-detect"),
                                QStringLiteral("file_name"));
     parser.addOption(appFile);
 
     QCommandLineOption serverPort({ QStringLiteral("server-port"), QStringLiteral("p") },
-                                  QStringLiteral("Development server port"),
+                                  QCoreApplication::translate("cutelystcmd", "Development server port"),
                                   QStringLiteral("port"));
     parser.addOption(serverPort);
 
     QCommandLineOption restartOpt({ QStringLiteral("restart"), QStringLiteral("r") },
-                                  QStringLiteral("Restarts the development server when the application file changes"));
+                                  QCoreApplication::translate("cutelystcmd", "Restarts the development server when the application file changes"));
     parser.addOption(restartOpt);
 
     const QStringList arguments = app.arguments();
@@ -521,8 +516,8 @@ int main(int argc, char *argv[])
 
         QDir projectDir;
         if (!Helper::findProjectDir(QDir::current(), &projectDir)) {
-            qDebug() << "Error: failed to find project";
-            return false;
+            std::cerr << qUtf8Printable(QCoreApplication::translate("cutelystcmd", "Error: failed to find project")) << std::endl;
+            return 1;
         }
         wsgi.setChdir2(projectDir.absolutePath());
 
@@ -530,7 +525,7 @@ int main(int argc, char *argv[])
         if (localFilename.isEmpty()) {
             localFilename = Helper::findApplication(projectDir);
             if (!QFile::exists(localFilename)) {
-                qDebug() << "Error: Application file not found";
+                std::cerr << qUtf8Printable(QCoreApplication::translate("cutelystcmd", "Error: Application file not found")) << std::endl;
                 return 1;
             }
         }

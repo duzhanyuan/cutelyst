@@ -14,7 +14,7 @@ class CoverageObject : public QObject
 {
     Q_OBJECT
 public:
-    CoverageObject(QObject *parent = 0) : QObject(parent) {}
+    explicit CoverageObject(QObject *parent = nullptr) : QObject(parent) {}
     virtual void initTest() {}
     virtual void cleanupTest() {}
 protected Q_SLOTS:
@@ -35,18 +35,11 @@ public:
 
     QVariantMap createRequest(const QString &method, const QString &path, const QByteArray &query, const Headers &headers, QByteArray *body);
 
-    virtual bool finalizeHeadersWrite(Context *c, quint16 status, const Headers &headers, void *engineData) override;
-
     virtual bool init() override;
 
-protected:
-    virtual qint64 doWrite(Context *c, const char *data, qint64 len, void *engineData) override;
-
-private:
-    QByteArray m_responseData;
-    QByteArray m_status;
-    Headers m_headers;
-    quint16 m_statusCode;
+    inline static const char *httpStatusMessage(quint16 status, int *len = nullptr) {
+        return Engine::httpStatusMessage(status, len);
+    }
 };
 
 class SequentialBuffer : public QIODevice
@@ -80,6 +73,12 @@ public:
 
     C_ATTR(rootActionOnControllerWithoutNamespace, :Local :AutoArgs)
     void rootActionOnControllerWithoutNamespace(Context *c) {
+        c->response()->setBody(c->actionName());
+    }
+
+    C_ATTR(denied, :Local :AutoArgs)
+    void denied(Context *c) {
+        c->response()->setStatus(Response::Forbidden);
         c->response()->setBody(c->actionName());
     }
 

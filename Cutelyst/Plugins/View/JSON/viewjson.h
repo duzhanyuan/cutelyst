@@ -1,22 +1,20 @@
 /*
- * Copyright (C) 2015-2016 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2015-2017 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #ifndef VIEWJSON_H
 #define VIEWJSON_H
 
@@ -26,10 +24,6 @@
 namespace Cutelyst {
 
 class ViewJsonPrivate;
-/**
- * ViewJson is a Cutelyst::View handler that renders stash
- * data in JSON format.
- */
 class CUTELYST_VIEW_JSON_EXPORT ViewJson : public View
 {
     Q_OBJECT
@@ -78,19 +72,30 @@ public:
      * Specify which stash key is exposed as a JSON response,
      * this will change exposeStashMode() to ViewJson::String
      */
-    void setExposeStashString(const QString &key);
+    void setExposeStash(const QString &key);
 
     /**
      * Specify which stash keys are exposed as a JSON response,
      * this will change exposeStashMode() to ViewJson::StringList
      */
-    void setExposeStashStringList(const QStringList &keys);
+    void setExposeStash(const QStringList &keys);
 
     /**
      * Specify which stash keys are exposed as a JSON response,
      * this will change exposeStashMode() to ViewJson::RegularExpression
      */
-    void setExposeStashRegularExpression(const QRegularExpression &re);
+    void setExposeStash(const QRegularExpression &re);
+
+    /**
+     * By default this plugin does \b NOT sets X-JSON header if the requested client is a Prototype.js with X-JSON support.
+     * By setting true, you can opt-out this behavior so that you do not need to do eval() by your own.
+     */
+    void setXJsonHeader(bool enable);
+
+    /**
+     * Returns true if the X-JSON header should be sent
+     */
+    bool xJsonHeader() const;
 
     QByteArray render(Context *c) const final;
 

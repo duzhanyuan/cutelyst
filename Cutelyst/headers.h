@@ -1,20 +1,19 @@
 /*
- * Copyright (C) 2014-2016 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2014-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #ifndef HEADERS_H
 #define HEADERS_H
@@ -247,7 +246,7 @@ public:
      * "Basic Authentication Scheme".
      * It will return a pair of username and password respectively.
      */
-    QPair<QString, QString> authorizationBasicPair() const;
+    std::pair<QString, QString> authorizationBasicPair() const;
 
     /**
      * This method is used to set an authorization header that use the
@@ -255,13 +254,6 @@ public:
      * It won't set the values if username contains a colon ':'.
      */
     QString setAuthorizationBasic(const QString &username, const QString &password);
-
-    /**
-     * This method is used to get all the fields that
-     * build a "Digest Authentication Scheme".
-     * It will return a Hash containing keys and values.
-     */
-    QHash<QString, QString> authorizationDigest() const;
 
     /**
      * A user agent that wishes to authenticate itself with a server or a proxy, may do so by including these headers.
@@ -280,7 +272,7 @@ public:
      * "Basic Authentication Scheme" but using the "Proxy-Authorization" header instead.
      * It will return a pair of username and password respectively.
      */
-    QPair<QString, QString> proxyAuthorizationBasicPair() const;
+    std::pair<QString, QString> proxyAuthorizationBasicPair() const;
 
     /**
      * Returns the value associated with \p field
@@ -396,5 +388,7 @@ void Headers::pushRawHeader(const QString &field, const QString &value) {
 }
 
 Q_DECLARE_METATYPE(Cutelyst::Headers)
+
+QDebug CUTELYST_LIBRARY operator<<(QDebug dbg, const Cutelyst::Headers &headers);
 
 #endif // HEADERS_H

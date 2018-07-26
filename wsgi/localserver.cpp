@@ -2,19 +2,18 @@
  * Copyright (C) 2017 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #include "localserver.h"
 #include "socket.h"
@@ -101,25 +100,25 @@ void LocalServer::incomingConnection(quintptr handle)
         sock = m_socks.back();
         m_socks.pop_back();
     } else {
-        sock = new LocalSocket(m_wsgi, this);
-        sock->engine = m_engine;
+        sock = new LocalSocket(m_engine, this);
+        sock->protoData = m_protocol->createData(sock);
 
         connect(sock, &QIODevice::readyRead, [sock] () {
             sock->timeout = false;
-            sock->proto->readyRead(sock, sock);
+            sock->proto->parse(sock, sock);
         });
-        connect(sock, &LocalSocket::finished, [this] (LocalSocket *obj) {
-            m_socks.push_back(obj);
+        connect(sock, &LocalSocket::finished, this, [this, sock] () {
+            sock->resetSocket();
+            m_socks.push_back(sock);
             if (--m_processing == 0) {
                 m_engine->stopSocketTimeout();
             }
-        });
+        }, Qt::QueuedConnection);
     }
 
     if (Q_LIKELY(sock->setSocketDescriptor(handle))) {
-        sock->resetSocket();
-
         sock->proto = m_protocol;
+
         sock->serverAddress = QStringLiteral("localhost");
         if (++m_processing) {
             m_engine->startSocketTimeout();
@@ -150,8 +149,8 @@ void LocalServer::shutdown()
         for (auto child : childrenL) {
             auto socket = qobject_cast<LocalSocket*>(child);
             if (socket) {
-                socket->headerConnection = Socket::HeaderConnectionClose;
-                connect(socket, &LocalSocket::finished, [this] () {
+                socket->protoData->headerConnection = ProtocolData::HeaderConnectionClose;
+                connect(socket, &LocalSocket::finished, this, [this] () {
                     if (!m_processing) {
                         m_engine->serverShutdown();
                     }

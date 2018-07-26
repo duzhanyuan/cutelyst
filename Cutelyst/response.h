@@ -1,22 +1,20 @@
 /*
- * Copyright (C) 2013-2016 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #ifndef CUTELYST_RESPONSE_H
 #define CUTELYST_RESPONSE_H
 
@@ -31,6 +29,7 @@ namespace Cutelyst {
 
 class Context;
 class Engine;
+class EngineRequest;
 class ResponsePrivate;
 class CUTELYST_LIBRARY Response : public QIODevice
 {
@@ -48,6 +47,7 @@ public:
         NoContent                    = 204,
         ResetContent                 = 205,
         PartialContent               = 206,
+        MultiStatus                  = 207,
         MultipleChoices              = 300,
         MovedPermanently             = 301,
         Found                        = 302,
@@ -127,7 +127,7 @@ public:
      * device to a QBuffer, even if one was already
      * set.
      */
-    QByteArray &body() Q_REQUIRED_RESULT;
+    Q_REQUIRED_RESULT QByteArray &body();
 
     /**
      * Returns the body IO device (if any) of this response.
@@ -160,6 +160,20 @@ public:
      * content-type to application/json.
      */
     void setJsonBody(const QJsonDocument &documment);
+
+    /**
+     * Sets a QJsonObject on a QJsonDocument as the response body,
+     * using toJson(QJsonDocument::Compact) output and setting
+     * content-type to application/json.
+     */
+    void setJsonObjectBody(const QJsonObject &object);
+
+    /**
+     * Sets a QJsonArray on a QJsonDocument as the response body,
+     * using toJson(QJsonDocument::Compact) output and setting
+     * content-type to application/json.
+     */
+    void setJsonArrayBody(const QJsonArray &array);
 
     /**
      * Short for headers().contentEncoding();
@@ -315,9 +329,9 @@ public:
 
 protected:
     /**
-     * Constructs a Response object, for this context c, engine and defaultHeaders.
+     * Constructs a Response object, for this engine request and defaultHeaders.
      */
-    explicit Response(Context *c, Engine *engine, const Headers &defaultHeaders);
+    explicit Response(const Headers &defaultHeaders, EngineRequest *conn = nullptr);
 
     /**
      * Writes data to the response body, this will flush
@@ -336,6 +350,8 @@ protected:
     ResponsePrivate *d_ptr;
     friend class Application;
     friend class Engine;
+    friend class EngineConnection;
+    friend class Context;
     friend class ContextPrivate;
 };
 

@@ -1,20 +1,19 @@
 /*
- * Copyright (C) 2013-2015 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2017 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
 #include "authenticationrealm.h"
@@ -27,17 +26,20 @@
 
 using namespace Cutelyst;
 
-Q_LOGGING_CATEGORY(C_AUTH_REALM, "cutelyst.plugin.authentication.realm")
+Q_LOGGING_CATEGORY(C_AUTH_REALM, "cutelyst.plugin.authentication.realm", QtWarningMsg)
 
 #define SESSION_AUTHENTICATION_USER "__authentication_user"
 #define SESSION_AUTHENTICATION_USER_REALM "__authentication_user_realm" // in authentication.cpp
 
-AuthenticationRealm::AuthenticationRealm(AuthenticationStore *store, AuthenticationCredential *credential, QObject *parent)
+AuthenticationRealm::AuthenticationRealm(AuthenticationStore *store, AuthenticationCredential *credential, const QString &name, QObject *parent)
     : Component(parent)
     , m_store(store)
     , m_credential(credential)
 {
-
+    m_store->setParent(this);
+    m_credential->setParent(this);
+    setObjectName(name);
+    setName(name);
 }
 
 AuthenticationRealm::~AuthenticationRealm()
@@ -108,7 +110,7 @@ AuthenticationUser AuthenticationRealm::restoreUser(Context *c, const QVariant &
 
     if (!user.isNull()) {
         // Sets the realm the user originated in
-        user.setAuthRealm(this);
+        user.setAuthRealm(objectName());
     } else {
         qCWarning(C_AUTH_REALM) << "Store claimed to have a restorable user, but restoration failed. Did you change the user's id_field?";
     }

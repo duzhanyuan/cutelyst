@@ -26,6 +26,9 @@ using namespace Cutelyst;
 class TestAuthentication : public CoverageObject
 {
     Q_OBJECT
+public:
+    explicit TestAuthentication(QObject *parent = nullptr) : CoverageObject(parent) {}
+
 private Q_SLOTS:
     void initTestCase();
 
@@ -49,7 +52,7 @@ class AuthenticationTest : public Controller
 {
     Q_OBJECT
 public:
-    AuthenticationTest(QObject *parent) : Controller(parent) {}
+    explicit AuthenticationTest(QObject *parent) : Controller(parent) {}
 
     C_ATTR(authenticate, :Local :AutoArgs)
     void authenticate(Context *c) {
@@ -102,7 +105,7 @@ public:
     void authenticate_user_obj(Context *c, const QString &realm) {
         if (Authentication::user(c).isNull()
                 && Authentication::authenticate(c, c->request()->queryParameters(), realm)
-                && !Authentication::user(c).id().isEmpty()) {
+                && !Authentication::user(c).id().isNull()) {
             c->response()->setBody(QStringLiteral("ok"));
         } else {
             c->response()->setBody(QStringLiteral("fail"));
@@ -149,7 +152,7 @@ TestEngine* TestAuthentication::getEngine()
 
     auto auth = new Authentication(app);
 
-    auto clearStore = new StoreMinimal;
+    auto clearStore = new StoreMinimal(QStringLiteral("id"));
     AuthenticationUser fooUser(QStringLiteral("foo"));
     fooUser.insert(QStringLiteral("password"), QStringLiteral("123"));
     clearStore->addUser(fooUser);
@@ -162,7 +165,7 @@ TestEngine* TestAuthentication::getEngine()
     auth->addRealm(new AuthenticationRealm(clearStore, clearPassword));
 
 
-    auto hashedStore = new StoreMinimal;
+    auto hashedStore = new StoreMinimal(QStringLiteral("id"));
     fooUser.insert(QStringLiteral("password"), CredentialPassword::createPassword(QByteArrayLiteral("123"), QCryptographicHash::Sha256, 10, 10, 10));
     hashedStore->addUser(fooUser);
     barUser.insert(QStringLiteral("password"), CredentialPassword::createPassword(QByteArrayLiteral("321"), QCryptographicHash::Sha256, 20, 20, 20));
@@ -170,24 +173,27 @@ TestEngine* TestAuthentication::getEngine()
     auto hashedPassword = new CredentialPassword;
     hashedPassword->setPasswordField(QStringLiteral("password"));
     hashedPassword->setPasswordType(CredentialPassword::Hashed);
-    auth->addRealm(new AuthenticationRealm(hashedStore, hashedPassword), QStringLiteral("hashed"));
+    auth->addRealm(new AuthenticationRealm(hashedStore, hashedPassword, QStringLiteral("hashed")));
 
     auto nonePassword = new CredentialPassword;
     nonePassword->setPasswordField(QStringLiteral("password"));
     nonePassword->setPasswordType(CredentialPassword::None);
-    auth->addRealm(new AuthenticationRealm(clearStore, nonePassword), QStringLiteral("none"));
+    auth->addRealm(new AuthenticationRealm(clearStore, nonePassword, QStringLiteral("none")));
 
     auto clearHttpCredential = new CredentialHttp;
     clearHttpCredential->setPasswordType(CredentialHttp::Clear);
-    auth->addRealm(new AuthenticationRealm(clearStore, clearHttpCredential), QStringLiteral("httpClear"));
+    clearHttpCredential->setUsernameField(QStringLiteral("id"));
+    auth->addRealm(new AuthenticationRealm(clearStore, clearHttpCredential, QStringLiteral("httpClear")));
 
     auto hashedHttpCredential = new CredentialHttp;
     hashedHttpCredential->setPasswordType(CredentialHttp::Hashed);
-    auth->addRealm(new AuthenticationRealm(hashedStore, hashedHttpCredential), QStringLiteral("httpHashed"));
+    hashedHttpCredential->setUsernameField(QStringLiteral("id"));
+    auth->addRealm(new AuthenticationRealm(hashedStore, hashedHttpCredential, QStringLiteral("httpHashed")));
 
     auto noneHttpCredential = new CredentialHttp;
     noneHttpCredential->setPasswordType(CredentialHttp::None);
-    auth->addRealm(new AuthenticationRealm(clearStore, noneHttpCredential), QStringLiteral("httpNone"));
+    noneHttpCredential->setUsernameField(QStringLiteral("id"));
+    auth->addRealm(clearStore, noneHttpCredential, QStringLiteral("httpNone"));
 
 
     new Session(app);

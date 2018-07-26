@@ -1,22 +1,20 @@
 /*
- * Copyright (C) 2015-2016 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2015-2017 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #ifndef CSQL_H
 #define CSQL_H
 
@@ -52,6 +50,12 @@ namespace Sql
     CUTELYST_PLUGIN_UTILS_SQL_EXPORT QVariantMap queryToMapObject(QSqlQuery &query);
 
     /**
+     * Returns a QJsonObject for the first (if any) row in the query object.
+     * Each column name is a key in the object
+     */
+    CUTELYST_PLUGIN_UTILS_SQL_EXPORT QJsonObject queryToJsonObject(QSqlQuery &query);
+
+    /**
      * Returns a variant list of QVariant maps for all the rows
      * in the query object, it's useful for creating
      * stash objects for say a list of users to be used by
@@ -60,11 +64,35 @@ namespace Sql
     CUTELYST_PLUGIN_UTILS_SQL_EXPORT QVariantList queryToMapList(QSqlQuery &query);
 
     /**
+     * Returns an array of QJsonObject objects for all the rows in the query object
+     */
+    CUTELYST_PLUGIN_UTILS_SQL_EXPORT QJsonArray queryToJsonObjectArray(QSqlQuery &query);
+
+    /**
+     * Returns a list of QVariantLists for all the rows in the query object, it's fastest option to
+     * pass to Grantlee view as columns are indexed by it's position instead of a QString hash lookup.
+     */
+    CUTELYST_PLUGIN_UTILS_SQL_EXPORT QVariantList queryToList(QSqlQuery &query);
+
+    /**
+     * Returns a QJsonArray of arrays for all the rows in the query object,
+     * columns are indexed by it's position instead of a QString map lookup.
+     */
+    CUTELYST_PLUGIN_UTILS_SQL_EXPORT QJsonArray queryToJsonArray(QSqlQuery &query);
+
+    /**
      * Returns a QVariantHash of QVariantHashes where the key parameter
      * is the field name in the query result. This is useful when you
      * want to access specific user by user name or user id.
      */
     CUTELYST_PLUGIN_UTILS_SQL_EXPORT QVariantHash queryToIndexedHash(QSqlQuery &query, const QString &key);
+
+    /**
+     * Returns a QJsonObject of QJsonObject where the key parameter
+     * is the field name in the query result. This is useful when you
+     * want to access specific user by user name or user id.
+     */
+    CUTELYST_PLUGIN_UTILS_SQL_EXPORT QJsonObject queryToIndexedJsonObject(QSqlQuery &query, const QString &key);
 
     /**
      * Bind params to the query, using the param name as
@@ -94,6 +122,11 @@ namespace Sql
      * Returns a string with as "dbName-threadNumber" to be used for connecting
      */
     CUTELYST_PLUGIN_UTILS_SQL_EXPORT QString databaseNameThread(const QString &dbName = QString());
+
+    /**
+     * Returns a QSqlDatabase named as "dbName-threadNumber" to be used for QSqlQuery
+     */
+    CUTELYST_PLUGIN_UTILS_SQL_EXPORT QSqlDatabase databaseThread(const QString &dbName = QString());
 
     /**
      * Returns a QSqlQuery object prepared with \pa query using the \pa dbName database

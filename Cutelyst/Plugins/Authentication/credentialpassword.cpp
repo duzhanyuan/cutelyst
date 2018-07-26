@@ -1,22 +1,20 @@
 /*
- * Copyright (C) 2013-2015 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-
 #include "credentialpassword_p.h"
 #include "authenticationrealm.h"
 
@@ -27,7 +25,7 @@
 
 using namespace Cutelyst;
 
-Q_LOGGING_CATEGORY(C_CREDENTIALPASSWORD, "cutelyst.plugin.credentialpassword")
+Q_LOGGING_CATEGORY(C_CREDENTIALPASSWORD, "cutelyst.plugin.credentialpassword", QtWarningMsg)
 
 CredentialPassword::CredentialPassword(QObject *parent) : AuthenticationCredential(parent)
   , d_ptr(new CredentialPasswordPrivate)
@@ -69,13 +67,13 @@ void CredentialPassword::setPasswordField(const QString &fieldName)
     d->passwordField = fieldName;
 }
 
-CredentialPassword::Type CredentialPassword::passwordType() const
+CredentialPassword::PasswordType CredentialPassword::passwordType() const
 {
     Q_D(const CredentialPassword);
     return d->passwordType;
 }
 
-void CredentialPassword::setPasswordType(CredentialPassword::Type type)
+void CredentialPassword::setPasswordType(Cutelyst::CredentialPassword::PasswordType type)
 {
     Q_D(CredentialPassword);
     d->passwordType = type;
@@ -148,12 +146,16 @@ bool CredentialPassword::validatePassword(const QByteArray &password, const QByt
 QByteArray CredentialPassword::createPassword(const QByteArray &password, QCryptographicHash::Algorithm method, int iterations, int saltByteSize, int hashByteSize)
 {
     QByteArray salt;
+#ifdef Q_OS_LINUX
     QFile random(QStringLiteral("/dev/urandom"));
-    if (!random.open(QIODevice::ReadOnly)) {
-        salt = QUuid::createUuid().toByteArray().toBase64();
-    } else {
+    if (random.open(QIODevice::ReadOnly)) {
         salt = random.read(saltByteSize).toBase64();
+    } else {
+#endif
+        salt = QUuid::createUuid().toRfc4122().toBase64();
+#ifdef Q_OS_LINUX
     }
+#endif
 
     const QByteArray methodStr = CredentialPasswordPrivate::cryptoEnumToStr(method);
     return methodStr + ':' + QByteArray::number(iterations) + ':' + salt + ':' +
@@ -164,6 +166,11 @@ QByteArray CredentialPassword::createPassword(const QByteArray &password, QCrypt
                 iterations,
                 hashByteSize
                 ).toBase64();
+}
+
+QByteArray CredentialPassword::createPassword(const QByteArray &password)
+{
+    return createPassword(password, QCryptographicHash::Sha512, 10000, 16, 16);
 }
 
 // TODO https://crackstation.net/hashing-security.htm
@@ -257,12 +264,7 @@ bool CredentialPasswordPrivate::checkPassword(const AuthenticationUser &user, co
     QString password = authinfo.value(passwordField);
     const QString storedPassword = user.value(passwordField).toString();
 
-    if (passwordType == CredentialPassword::None) {
-        qCDebug(C_CREDENTIALPASSWORD) << "CredentialPassword is set to ignore password check";
-        return true;
-    } else if (passwordType == CredentialPassword::Clear) {
-        return storedPassword == password;
-    } else if (passwordType == CredentialPassword::Hashed) {
+    if (Q_LIKELY(passwordType == CredentialPassword::Hashed)) {
         if (!passwordPreSalt.isEmpty()) {
             password.prepend(password);
         }
@@ -272,8 +274,11 @@ bool CredentialPasswordPrivate::checkPassword(const AuthenticationUser &user, co
         }
 
         return CredentialPassword::validatePassword(password.toUtf8(), storedPassword.toUtf8());
-    } else if (passwordType == CredentialPassword::SelfCheck) {
-        return user.checkPassword(password);
+    } else if (passwordType == CredentialPassword::Clear) {
+        return storedPassword == password;
+    } else if (passwordType == CredentialPassword::None) {
+        qCDebug(C_CREDENTIALPASSWORD) << "CredentialPassword is set to ignore password check";
+        return true;
     }
 
     return false;

@@ -1,20 +1,19 @@
 /*
- * Copyright (C) 2017 Matthias Fehring <kontakt@buschmann23.de>
+ * Copyright (C) 2017-2018 Matthias Fehring <kontakt@buschmann23.de>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #ifndef CUTELYSTVALIDATOREMAIL_P_H
 #define CUTELYSTVALIDATOREMAIL_P_H
@@ -23,15 +22,40 @@
 #include "validatorrule_p.h"
 
 namespace Cutelyst {
-    
+
+struct ValidatorEmailDiagnoseStruct {
+    ValidatorEmail::Diagnose finalStatus;
+    QList<ValidatorEmail::Diagnose> returnStatus;
+    QString localpart;
+    QString domain;
+    QString literal;
+};
+
 class ValidatorEmailPrivate : public ValidatorRulePrivate
 {
 public:
-    ValidatorEmailPrivate(const QString &f, const QString &l, const QString &e) :
-        ValidatorRulePrivate(f, l, e)
+    ValidatorEmailPrivate(const QString &f, ValidatorEmail::Category thresh, ValidatorEmail::Options opts, const ValidatorMessages &m, const QString &dvk) :
+        ValidatorRulePrivate(f, m, dvk),
+        threshold(thresh),
+        options(opts)
     {}
+
+    enum EmailPart {
+        ComponentLocalpart  = 0,
+        ComponentDomain     = 1,
+        ComponentLiteral    = 2,
+        ContextComment      = 3,
+        ContextFWS          = 4,
+        ContextQuotedString = 5,
+        ContextQuotedPair   = 6
+    };
+
+    static bool checkEmail(const QString &address, ValidatorEmail::Options options = ValidatorEmail::NoOption, ValidatorEmail::Category threshold = ValidatorEmail::RFC5321, ValidatorEmailDiagnoseStruct *diagnoseStruct = nullptr);
+
+    ValidatorEmail::Category threshold = ValidatorEmail::RFC5321;
+    ValidatorEmail::Options options = ValidatorEmail::NoOption;
 };
-    
+
 }
 
 #endif //CUTELYSTVALIDATOREMAIL_P_H

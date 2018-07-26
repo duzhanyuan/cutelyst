@@ -1,9 +1,4 @@
-find_package(PkgConfig QUIET)
-
-if (NOT PkgConfig_FOUND AND NOT PKG_CONFIG_FOUND)
-    message(WARNING "pkg-config not found, not building uWSGI plugin")
-    return()
-endif ()
+find_package(PkgConfig REQUIRED)
 
 # uwsgi.h required if #ifdef UWSGI_UUID
 pkg_check_modules(UUID REQUIRED uuid)
@@ -12,7 +7,11 @@ find_package(CAP REQUIRED)
 
 set(uswgi_engine_SRC
     bodyuwsgi.cpp
+    bodyuwsgi.h
     engineuwsgi.cpp
+    engineuwsgi.h
+    uwsgiconnection.cpp
+    uwsgiconnection.h
     plugin.cpp
 )
 
@@ -27,20 +26,18 @@ add_definitions(${UWSGI_CFLAGS})
 
 add_library(cutelyst MODULE ${uswgi_engine_SRC})
 target_link_libraries(cutelyst
-    PRIVATE CutelystQt5::Core
-    PRIVATE Qt5::Core
-    PRIVATE Qt5::Network
+    PRIVATE Cutelyst2Qt5::Core
 )
 
 if (LINUX)
 target_link_libraries(cutelyst
-    PRIVATE CutelystQt5::EventLoopEPoll
+    PRIVATE Cutelyst2Qt5::EventLoopEPoll
 )
 endif (LINUX)
 
 SET_TARGET_PROPERTIES(cutelyst
     PROPERTIES
-    SUFFIX "_plugin.so"
+    SUFFIX "2_plugin.so"
     PREFIX ""
 )
 

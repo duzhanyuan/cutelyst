@@ -1,20 +1,19 @@
 /*
- * Copyright (C) 2013-2017 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #include "dispatchtypepath_p.h"
 
@@ -145,7 +144,7 @@ QString DispatchTypePath::uriForAction(Cutelyst::Action *action, const QStringLi
         const auto attributes = action->attributes();
         auto it = attributes.constFind(QStringLiteral("Path"));
         if (it != attributes.constEnd()) {
-            const QString path = it.value();
+            const QString &path = it.value();
             if (path.isEmpty()) {
                 ret = QStringLiteral("/");
             } else if (!path.startsWith(QLatin1Char('/'))) {
@@ -173,12 +172,14 @@ bool DispatchTypePathPrivate::registerPath(const QString &path, Action *action)
         int actionNumberOfArgs = action->numberOfArgs();
         for (const Action *regAction : it.value()) {
             if (regAction->numberOfArgs() == actionNumberOfArgs) {
-                qCCritical(CUTELYST_DISPATCHER) << "Not registering Action"
-                                                << action->name()
-                                                << "of controller"
-                                                << action->controller()->objectName()
-                                                << "because it conflicts with "
-                                                << regAction->name();
+                qCCritical(CUTELYST_DISPATCHER_PATH) << "Not registering Action"
+                                                     << action->name()
+                                                     << "of controller"
+                                                     << action->controller()->objectName()
+                                                     << "because it conflicts with"
+                                                     << regAction->name()
+                                                     << "of controller"
+                                                     << regAction->controller()->objectName();
                 return false;
             }
         }

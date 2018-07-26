@@ -1,20 +1,19 @@
 /*
- * Copyright (C) 2013-2017 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2013-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #include "authentication_p.h"
 
@@ -28,17 +27,18 @@
 
 #include <QLoggingCategory>
 
-Q_LOGGING_CATEGORY(CUTELYST_UTILS_AUTH, "cutelyst.utils.auth")
-Q_LOGGING_CATEGORY(C_AUTHENTICATION, "cutelyst.plugin.authentication")
+Q_LOGGING_CATEGORY(CUTELYST_UTILS_AUTH, "cutelyst.utils.auth", QtWarningMsg)
+Q_LOGGING_CATEGORY(C_AUTHENTICATION, "cutelyst.plugin.authentication", QtWarningMsg)
 
 using namespace Cutelyst;
 
 char *Authentication::defaultRealm = const_cast<char *>("cutelyst_authentication_default_realm");
+char *AuthenticationRealm::defaultRealm = const_cast<char *>("cutelyst_authentication_default_realm");
 
 static thread_local Authentication *auth = nullptr;
 
-#define AUTHENTICATION_USER "__authentication_user"
-#define AUTHENTICATION_USER_REALM "__authentication_user_realm"
+#define AUTHENTICATION_USER QStringLiteral("_c_authentication_user")
+#define AUTHENTICATION_USER_REALM QStringLiteral("_c_authentication_user_realm")
 
 Authentication::Authentication(Application *parent) : Plugin(parent)
   , d_ptr(new AuthenticationPrivate)
@@ -52,20 +52,17 @@ Authentication::~Authentication()
     delete d_ptr;
 }
 
-void Authentication::addRealm(Cutelyst::AuthenticationRealm *realm, const QString &name)
+void Authentication::addRealm(Cutelyst::AuthenticationRealm *realm)
 {
     Q_D(Authentication);
-    realm->setObjectName(name);
-    realm->setName(name);
-    d->realms.insert(name, realm);
-    d->realmsOrder.append(name);
+    realm->setParent(this);
+    d->realms.insert(realm->objectName(), realm);
+    d->realmsOrder.append(realm->objectName());
 }
 
 void Cutelyst::Authentication::addRealm(Cutelyst::AuthenticationStore *store, Cutelyst::AuthenticationCredential *credential, const QString &name)
 {
-    auto realm = new AuthenticationRealm(store, credential, this);
-    realm->setName(name);
-    addRealm(realm, name);
+    addRealm(new AuthenticationRealm(store, credential, name, this));
 }
 
 AuthenticationRealm *Authentication::realm(const QString &name) const
@@ -116,7 +113,7 @@ AuthenticationUser Authentication::findUser(Cutelyst::Context *c, const ParamsMu
 Cutelyst::AuthenticationUser Authentication::user(Cutelyst::Context *c)
 {
     AuthenticationUser ret;
-    QVariant user = c->property(AUTHENTICATION_USER);
+    const QVariant user = c->stash(AUTHENTICATION_USER);
     if (user.isNull()) {        
         ret = AuthenticationPrivate::restoreUser(c, QVariant(), QString());
     } else {
@@ -127,7 +124,7 @@ Cutelyst::AuthenticationUser Authentication::user(Cutelyst::Context *c)
 
 bool Authentication::userExists(Cutelyst::Context *c)
 {
-    if (!c->property(AUTHENTICATION_USER).isNull()) {
+    if (!c->stash(AUTHENTICATION_USER).isNull()) {
         return true;
     } else {
         if (auth) {
@@ -143,9 +140,9 @@ bool Authentication::userExists(Cutelyst::Context *c)
 
 bool Authentication::userInRealm(Cutelyst::Context *c, const QString &realmName)
 {
-    QVariant user = c->property(AUTHENTICATION_USER);
+    const QVariant user = c->stash(AUTHENTICATION_USER);
     if (!user.isNull()) {
-        return user.value<AuthenticationUser>().authRealm()->name() == realmName;
+        return user.value<AuthenticationUser>().authRealm() == realmName;
     } else {
         if (!auth) {
             qCCritical(C_AUTHENTICATION, "Authentication plugin not registered!");
@@ -206,19 +203,15 @@ AuthenticationUser AuthenticationPrivate::restoreUser(Context *c, const QVariant
     ret = realmPtr->restoreUser(c, frozenUser);
 
     AuthenticationPrivate::setUser(c, ret);
-    // TODO
-    // $user->auth_realm($realm->name) if $user;
 
     return ret;
 }
 
 AuthenticationRealm *AuthenticationPrivate::findRealmForPersistedUser(Context *c, const QMap<QString, AuthenticationRealm *> &realms, const QStringList &realmsOrder)
 {
-    AuthenticationRealm *realm;
-
-    const QVariant realmVariant = Session::value(c, QStringLiteral(AUTHENTICATION_USER_REALM));
+    const QVariant realmVariant = Session::value(c, AUTHENTICATION_USER_REALM);
     if (!realmVariant.isNull()) {
-        realm = realms.value(realmVariant.toString());
+        AuthenticationRealm *realm = realms.value(realmVariant.toString());
         if (realm && !realm->userIsRestorable(c).isNull()) {
             return realm;
         }
@@ -232,7 +225,7 @@ AuthenticationRealm *AuthenticationPrivate::findRealmForPersistedUser(Context *c
         }
     }
 
-    return 0;
+    return nullptr;
 }
 
 void AuthenticationPrivate::setAuthenticated(Context *c, const AuthenticationUser &user, const QString &realmName, AuthenticationRealm *realm)
@@ -242,8 +235,6 @@ void AuthenticationPrivate::setAuthenticated(Context *c, const AuthenticationUse
     if (!realm) {
         qCWarning(C_AUTHENTICATION) << "Called with invalid realm" << realmName;
     }
-    // TODO implement a user class
-//    $user->auth_realm($realm->name);
 
     AuthenticationPrivate::persistUser(c, user, realmName, realm);
 }
@@ -251,11 +242,11 @@ void AuthenticationPrivate::setAuthenticated(Context *c, const AuthenticationUse
 void AuthenticationPrivate::setUser(Context *c, const AuthenticationUser &user, const QString &realmName)
 {
     if (user.isNull()) {
-        c->setProperty(AUTHENTICATION_USER, QVariant());
-        c->setProperty(AUTHENTICATION_USER_REALM, QVariant());
+        c->setStash(AUTHENTICATION_USER, QVariant());
+        c->setStash(AUTHENTICATION_USER_REALM, QVariant());
     } else {
-        c->setProperty(AUTHENTICATION_USER, QVariant::fromValue(user));
-        c->setProperty(AUTHENTICATION_USER_REALM, realmName);
+        c->setStash(AUTHENTICATION_USER, QVariant::fromValue(user));
+        c->setStash(AUTHENTICATION_USER_REALM, realmName);
     }
 }
 
@@ -263,7 +254,7 @@ void AuthenticationPrivate::persistUser(Context *c, const AuthenticationUser &us
 {
     if (Authentication::userExists(c)) {
         if (Session::isValid(c)) {
-            Session::setValue(c, QStringLiteral(AUTHENTICATION_USER_REALM), realmName);
+            Session::setValue(c, AUTHENTICATION_USER_REALM, realmName);
         }
 
         if (realm) {
@@ -274,7 +265,7 @@ void AuthenticationPrivate::persistUser(Context *c, const AuthenticationUser &us
 
 void AuthenticationPrivate::_q_postFork(Application *app)
 {
-    auth = app->plugin<Authentication *>();;
+    auth = app->plugin<Authentication *>();
 }
 
 Cutelyst::AuthenticationCredential::AuthenticationCredential(QObject *parent) : QObject(parent)

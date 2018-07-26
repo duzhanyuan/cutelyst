@@ -1,33 +1,27 @@
 ﻿/*
- * Copyright (C) 2017 Matthias Fehring <kontakt@buschmann23.de>
+ * Copyright (C) 2017-2018 Matthias Fehring <kontakt@buschmann23.de>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
 #include "validatorrequiredwithout_p.h"
 
 using namespace Cutelyst;
 
-ValidatorRequiredWithout::ValidatorRequiredWithout(const QString &field, const QStringList &otherFields, const QString &label, const QString &customError) :
-    ValidatorRule(*new ValidatorRequiredWithoutPrivate(field, otherFields, label, customError))
-{
-}
-
-ValidatorRequiredWithout::ValidatorRequiredWithout(ValidatorRequiredWithoutPrivate &dd) :
-    ValidatorRule(dd)
+ValidatorRequiredWithout::ValidatorRequiredWithout(const QString &field, const QStringList &otherFields, const Cutelyst::ValidatorMessages &messages) :
+    ValidatorRule(*new ValidatorRequiredWithoutPrivate(field, otherFields, messages))
 {
 }
 
@@ -35,14 +29,15 @@ ValidatorRequiredWithout::~ValidatorRequiredWithout()
 {
 }
 
-QString ValidatorRequiredWithout::validate() const
+ValidatorReturnType ValidatorRequiredWithout::validate(Context *c, const ParamsMultiMap &params) const
 {
-    QString result;
+    ValidatorReturnType result;
 
     Q_D(const ValidatorRequiredWithout);
 
     if (d->otherFields.isEmpty()) {
-        result = validationDataError();
+        result.errorMessage = validationDataError(c);
+        qCWarning(C_VALIDATOR, "ValidatorRequiredWithout: invalid validation data for field %s at %s::%s", qPrintable(field()), qPrintable(c->controllerName()), qPrintable(c->actionName()));
     } else {
 
         bool otherMissing = false;
@@ -50,33 +45,41 @@ QString ValidatorRequiredWithout::validate() const
         const QStringList ofc = d->otherFields;
 
         for (const QString &other : ofc) {
-            if (!d->parameters.contains(other)) {
+            if (!params.contains(other)) {
                 otherMissing = true;
                 break;
             }
         }
 
-        if (otherMissing && value().isEmpty()) {
-            result = validationError();
+        const QString v = value(params);
+
+        if (otherMissing) {
+            if (!v.isEmpty()) {
+                result.value.setValue<QString>(v);
+            } else {
+                result.errorMessage = validationError(c);
+                qCDebug(C_VALIDATOR, "ValidatorRequiredWithout: Validation failed for field %s at %s::%s", qPrintable(field()), qPrintable(c->controllerName()), qPrintable(c->actionName()));
+            }
+        } else {
+            if (!v.isEmpty()) {
+                result.value.setValue<QString>(v);
+            }
         }
     }
 
     return result;
 }
 
-QString ValidatorRequiredWithout::genericValidationError() const
+QString ValidatorRequiredWithout::genericValidationError(Context *c, const QVariant &errorData) const
 {
     QString error;
-    if (label().isEmpty()) {
-        error = QStringLiteral("This is required.");
-    } else {
-        error = QStringLiteral("You must fill in the “%1” field.").arg(label());
+    Q_UNUSED(errorData)
+    const QString _label = label(c);
+    if (_label.isEmpty()) {
+        error = c->translate("Cutelyst::ValidatorRequiredWithout", "This is required.");
+    } else {        
+        error = c->translate("Cutelyst::ValidatorRequiredWithout", "You must fill in the “%1” field.").arg(_label);
     }
     return error;
 }
 
-void ValidatorRequiredWithout::setOtherFields(const QStringList &otherFields)
-{
-    Q_D(ValidatorRequiredWithout);
-    d->otherFields = otherFields;
-}

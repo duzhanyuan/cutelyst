@@ -1,129 +1,123 @@
 /*
- * Copyright (C) 2016-2017 Daniel Nicoletti <dantti12@gmail.com>
+ * Copyright (C) 2016-2018 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #include "socket.h"
 
 #include "wsgi.h"
 
-#include <Cutelyst/Context>
+#include <QLoggingCategory>
 
-#include <QCoreApplication>
-#include <QDebug>
+Q_LOGGING_CATEGORY(CWSGI_SOCK, "cwsgi.socket", QtWarningMsg)
 
 using namespace CWSGI;
 
-TcpSocket::TcpSocket(WSGI *wsgi, QObject *parent) : QTcpSocket(parent), Socket(wsgi)
+Socket::Socket(bool secure, Cutelyst::Engine *_engine) : engine(_engine), isSecure(secure)
 {
-    isSecure = false;
-    requestPtr = this;
-    startOfRequest = 0;
+
+}
+
+Socket::~Socket()
+{
+    delete protoData;
+}
+
+TcpSocket::TcpSocket(Cutelyst::Engine *engine, QObject *parent) : QTcpSocket(parent), Socket(false, engine)
+{
     connect(this, &QTcpSocket::disconnected, this, &TcpSocket::socketDisconnected, Qt::DirectConnection);
 }
 
 void TcpSocket::connectionClose()
 {
+    QTcpSocket::flush();
     disconnectFromHost();
 }
 
-Socket::Socket(WSGI *wsgi)
+void TcpSocket::requestFinished()
 {
-    body = nullptr;
-    buffer = new char[wsgi->bufferSize()];
-}
-
-Socket::~Socket()
-{
-    delete [] buffer;
+    if (!--processing && state() != ConnectedState) {
+        Q_EMIT finished();
+    }
 }
 
 void TcpSocket::socketDisconnected()
 {
-    if (websocketContext) {
-        if (websocket_finn_opcode != 0x88) {
-            websocketContext->request()->webSocketClosed(1005, QString());
-        }
-
-        delete websocketContext;
-        websocketContext = nullptr;
-    }
+    protoData->socketDisconnected();
 
     if (!processing) {
-        Q_EMIT finished(this);
+        Q_EMIT finished();
     }
 }
 
-LocalSocket::LocalSocket(WSGI *wsgi, QObject *parent) : QLocalSocket(parent), Socket(wsgi)
+LocalSocket::LocalSocket(Cutelyst::Engine *engine, QObject *parent) : QLocalSocket(parent), Socket(false, engine)
 {
-    isSecure = false;
-    requestPtr = this;
-    startOfRequest = 0;
     connect(this, &QLocalSocket::disconnected, this, &LocalSocket::socketDisconnected, Qt::DirectConnection);
 }
 
 void LocalSocket::connectionClose()
 {
-    flush();
+    QLocalSocket::flush();
     disconnectFromServer();
+}
+
+void LocalSocket::requestFinished()
+{
+    if (!--processing && state() != ConnectedState) {
+        Q_EMIT finished();
+    }
 }
 
 void LocalSocket::socketDisconnected()
 {
-    if (websocketContext) {
-        if (websocket_finn_opcode != 0x88) {
-            websocketContext->request()->webSocketClosed(1005, QString());
-        }
-
-        delete websocketContext;
-        websocketContext = nullptr;
-    }
+    protoData->socketDisconnected();
 
     if (!processing) {
-        Q_EMIT finished(this);
+        Q_EMIT finished();
     }
 }
 
-SslSocket::SslSocket(WSGI *wsgi, QObject *parent) : QSslSocket(parent), Socket(wsgi)
+#ifndef QT_NO_SSL
+
+SslSocket::SslSocket(Cutelyst::Engine *engine, QObject *parent) : QSslSocket(parent), Socket(true, engine)
 {
-    isSecure = true;
-    requestPtr = this;
-    startOfRequest = 0;
     connect(this, &QSslSocket::disconnected, this, &SslSocket::socketDisconnected, Qt::DirectConnection);
 }
 
 void SslSocket::connectionClose()
 {
+    QSslSocket::flush();
     disconnectFromHost();
+}
+
+void SslSocket::requestFinished()
+{
+    if (!--processing && state() != ConnectedState) {
+        Q_EMIT finished();
+    }
 }
 
 void SslSocket::socketDisconnected()
 {
-    if (websocketContext) {
-        if (websocket_finn_opcode != 0x88) {
-            websocketContext->request()->webSocketClosed(1005, QString());
-        }
-
-        delete websocketContext;
-        websocketContext = nullptr;
-    }
+    protoData->socketDisconnected();
 
     if (!processing) {
-        Q_EMIT finished(this);
+        Q_EMIT finished();
     }
 }
+
+#endif // QT_NO_SSL
 
 #include "moc_socket.cpp"

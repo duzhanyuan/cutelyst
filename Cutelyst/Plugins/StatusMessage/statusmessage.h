@@ -2,19 +2,18 @@
  * Copyright (C) 2016-2017 Daniel Nicoletti <dantti12@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
+ * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Library General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB. If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #ifndef CUTELYST_PLUGIN_STATUSMESSAGE
 #define CUTELYST_PLUGIN_STATUSMESSAGE
@@ -101,16 +100,6 @@ public:
      * Saves an status message returning query parameters with the generated message id (mid) and it's token
      */
     static ParamsMultiMap statusQuery(Context *c, const QString &msg, ParamsMultiMap query = ParamsMultiMap());
-
-    /**
-     * DEPRECATED \sa error Saves an error message returning the generated message id (mid)
-     */
-    static Q_DECL_DEPRECATED QString setError(Context *c, const QString &msg);
-
-    /**
-     * DEPRECATED \sa status Saves a status message returning the generated message id (mid)
-     */
-    static Q_DECL_DEPRECATED QString setStatus(Context *c, const QString &msg);
 
 protected:
     /**

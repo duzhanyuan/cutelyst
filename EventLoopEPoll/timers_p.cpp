@@ -1,6 +1,22 @@
+/*
+ * Copyright (C) 2017 Daniel Nicoletti <dantti12@gmail.com>
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
 #include <QtCore/QCoreApplication>
 #include <QtCore/QEvent>
-#include <QtCore/QPair>
 #include <sys/epoll.h>
 #include <sys/timerfd.h>
 #include <sys/time.h>
@@ -10,7 +26,7 @@
 
 namespace {
 
-static void calculateCoarseTimerTimeout(TimerInfo* info, const struct timeval& now, struct timeval& when)
+static void calculateCoarseTimerTimeout(TimerInfo *info, const struct timeval &now, struct timeval &when)
 {
     Q_ASSERT(info->interval > 20);
     // The coarse timer works like this:
@@ -122,13 +138,16 @@ static void calculateCoarseTimerTimeout(TimerInfo* info, const struct timeval& n
     Q_ASSERT(timercmp(&now, &when, <=));
 }
 
-void calculateNextTimeout(TimerInfo* info, const struct timeval& now, struct timeval& delta)
+}
+
+void EventDispatcherEPollPrivate::calculateNextTimeout(TimerInfo *info, const struct timeval &now, struct timeval &delta)
 {
     struct timeval tv_interval;
     struct timeval when;
     tv_interval.tv_sec  = info->interval / 1000;
     tv_interval.tv_usec = (info->interval % 1000) * 1000;
 
+    info->when = now;
     if (info->interval) {
         qlonglong tnow  = (qlonglong(now.tv_sec)        * 1000) + (now.tv_usec        / 1000);
         qlonglong twhen = (qlonglong(info->when.tv_sec) * 1000) + (info->when.tv_usec / 1000);
@@ -175,9 +194,8 @@ void calculateNextTimeout(TimerInfo* info, const struct timeval& now, struct tim
 
     timersub(&when, &now, &delta);
 }
-}
 
-void EventDispatcherEPollPrivate::registerTimer(int timerId, int interval, Qt::TimerType type, QObject* object)
+void EventDispatcherEPollPrivate::registerTimer(int timerId, int interval, Qt::TimerType type, QObject *object)
 {
     Q_ASSERT(interval > 0);
 
@@ -186,26 +204,20 @@ void EventDispatcherEPollPrivate::registerTimer(int timerId, int interval, Qt::T
         struct timeval now;
         gettimeofday(&now, 0);
 
-        auto data  = new HandleData();
-        data->type        = htTimer;
-        data->ti.object   = object;
-        data->ti.when     = now; // calculateNextTimeout() will take care of info->when
-        data->ti.timerId  = timerId;
-        data->ti.interval = interval;
-        data->ti.fd       = fd;
-        data->ti.type     = type;
+        auto data = new TimerInfo(fd, timerId, interval, object);
+        data->when = now;
+        data->type = type;
 
         if (Qt::CoarseTimer == type) {
             if (interval >= 20000) {
-                data->ti.type = Qt::VeryCoarseTimer;
-            }
-            else if (interval <= 20) {
-                data->ti.type = Qt::PreciseTimer;
+                data->type = Qt::VeryCoarseTimer;
+            } else if (interval <= 20) {
+                data->type = Qt::PreciseTimer;
             }
         }
 
         struct timeval delta;
-        calculateNextTimeout(&data->ti, now, delta);
+        calculateNextTimeout(data, now, delta);
 
         struct itimerspec spec;
         spec.it_interval.tv_sec  = 0;
@@ -224,8 +236,8 @@ void EventDispatcherEPollPrivate::registerTimer(int timerId, int interval, Qt::T
         }
 
         struct epoll_event event;
-        event.events  = EPOLLIN;
-        event.data.fd = fd;
+        event.events = EPOLLIN;
+        event.data.ptr = data;
 
         if (Q_UNLIKELY(-1 == epoll_ctl(m_epoll_fd, EPOLL_CTL_ADD, fd, &event))) {
             qErrnoWarning("%s: epoll_ctl() failed", Q_FUNC_INFO);
@@ -236,61 +248,66 @@ void EventDispatcherEPollPrivate::registerTimer(int timerId, int interval, Qt::T
 
         m_timers.insert(timerId, data);
         m_handles.insert(fd, data);
-    }
-    else {
+    } else {
         qErrnoWarning("%s: timerfd_create() failed", Q_FUNC_INFO);
     }
 }
 
-void EventDispatcherEPollPrivate::registerZeroTimer(int timerId, QObject* object)
+void EventDispatcherEPollPrivate::registerZeroTimer(int timerId, QObject *object)
 {
-    ZeroTimer data;
-    data.object = object;
-    data.active = true;
-    m_zero_timers.insert(timerId, data);
+    m_zero_timers.insert(timerId, new ZeroTimer(timerId, object));
 }
 
 bool EventDispatcherEPollPrivate::unregisterTimer(int timerId)
 {
     auto it = m_timers.find(timerId);
     if (it != m_timers.end()) {
-        HandleData* data = it.value();
+        TimerInfo *data = it.value();
 
-        int fd = data->ti.fd;
+        int fd = data->fd;
 
         if (Q_UNLIKELY(-1 == epoll_ctl(m_epoll_fd, EPOLL_CTL_DEL, fd, 0))) {
             qErrnoWarning("%s: epoll_ctl() failed", Q_FUNC_INFO);
         }
 
         close(fd);
+        data->deref();
 
         m_timers.erase(it); // Hash is not rehashed
         m_handles.remove(fd);
-
-        delete data;
         return true;
+    } else {
+        auto zit = m_zero_timers.find(timerId);
+        if (zit != m_zero_timers.end()) {
+            ZeroTimer *data = zit.value();
+            data->deref();
+
+            m_zero_timers.erase(zit);
+            return true;
+        }
     }
 
-    return m_zero_timers.remove(timerId) > 0;
+    return false;
 }
 
-bool EventDispatcherEPollPrivate::unregisterTimers(QObject* object)
+bool EventDispatcherEPollPrivate::unregisterTimers(QObject *object)
 {
     bool result = false;
     auto it = m_timers.begin();
     while (it != m_timers.end()) {
-        HandleData* data = it.value();
+        TimerInfo *data = it.value();
 
-        if (object == data->ti.object) {
+        if (object == data->object) {
             result = true;
-            int fd = data->ti.fd;
+            int fd = data->fd;
 
             if (Q_UNLIKELY(-1 == epoll_ctl(m_epoll_fd, EPOLL_CTL_DEL, fd, 0))) {
                 qErrnoWarning("%s: epoll_ctl() failed", Q_FUNC_INFO);
             }
 
             close(fd);
-            delete data;
+
+            data->deref();
 
             it = m_timers.erase(it); // Hash is not rehashed
             m_handles.remove(fd);
@@ -302,12 +319,12 @@ bool EventDispatcherEPollPrivate::unregisterTimers(QObject* object)
 
     auto zit = m_zero_timers.begin();
     while (zit != m_zero_timers.end()) {
-        ZeroTimer& data = zit.value();
-        if (object == data.object) {
+        ZeroTimer *data = zit.value();
+        if (object == data->object) {
             result = true;
-            zit    = m_zero_timers.erase(zit);
-        }
-        else {
+            zit = m_zero_timers.erase(zit);
+            data->deref();
+        } else {
             ++zit;
         }
     }
@@ -315,16 +332,17 @@ bool EventDispatcherEPollPrivate::unregisterTimers(QObject* object)
     return result;
 }
 
-QList<QAbstractEventDispatcher::TimerInfo> EventDispatcherEPollPrivate::registeredTimers(QObject* object) const
+QList<QAbstractEventDispatcher::TimerInfo> EventDispatcherEPollPrivate::registeredTimers(QObject *object) const
 {
     QList<QAbstractEventDispatcher::TimerInfo> res;
+    res.reserve(m_timers.size() + m_zero_timers.size());
 
     auto it = m_timers.constBegin();
     while (it != m_timers.constEnd()) {
-        HandleData* data = it.value();
+        TimerInfo *data = it.value();
 
-        if (object == data->ti.object) {
-            QAbstractEventDispatcher::TimerInfo ti(it.key(), data->ti.interval, data->ti.type);
+        if (object == data->object) {
+            QAbstractEventDispatcher::TimerInfo ti(it.key(), data->interval, data->type);
             res.append(ti);
         }
 
@@ -333,8 +351,8 @@ QList<QAbstractEventDispatcher::TimerInfo> EventDispatcherEPollPrivate::register
 
     auto zit = m_zero_timers.constBegin();
     while (zit != m_zero_timers.constEnd()) {
-        const ZeroTimer& data = zit.value();
-        if (object == data.object) {
+        const ZeroTimer *data = zit.value();
+        if (object == data->object) {
             QAbstractEventDispatcher::TimerInfo ti(it.key(), 0, Qt::PreciseTimer);
             res.append(ti);
         }
@@ -349,16 +367,16 @@ int EventDispatcherEPollPrivate::remainingTime(int timerId) const
 {
     auto it = m_timers.constFind(timerId);
     if (it != m_timers.constEnd()) {
-        HandleData* data = it.value();
+        TimerInfo *data = it.value();
 
         struct timeval when;
         struct itimerspec spec;
 
-        if (!data->ti.interval) {
+        if (!data->interval) {
             return -1;
         }
 
-        if (Q_UNLIKELY(-1 == timerfd_gettime(data->ti.fd, &spec))) {
+        if (Q_UNLIKELY(-1 == timerfd_gettime(data->fd, &spec))) {
             qErrnoWarning("%s: timerfd_gettime() failed", Q_FUNC_INFO);
             return -1;
         }
@@ -372,46 +390,6 @@ int EventDispatcherEPollPrivate::remainingTime(int timerId) const
     // For zero timers we return -1 as well
 
     return -1;
-}
-
-void EventDispatcherEPollPrivate::timer_callback(const TimerInfo& info)
-{
-    uint64_t value;
-    int res;
-    do {
-        res = read(info.fd, &value, sizeof(value));
-    } while (-1 == res && EINTR == errno);
-
-    if (Q_UNLIKELY(-1 == res)) {
-        qErrnoWarning("%s: read() failed", Q_FUNC_INFO);
-    }
-
-    int tid = info.timerId;
-    QTimerEvent event(tid);
-    QCoreApplication::sendEvent(info.object, &event);
-
-    auto it = m_timers.constFind(tid);
-    if (it != m_timers.constEnd()) {
-        HandleData* data = it.value();
-
-        struct timeval now;
-        struct timeval delta;
-        struct itimerspec spec;
-
-        spec.it_interval.tv_sec  = 0;
-        spec.it_interval.tv_nsec = 0;
-
-        gettimeofday(&now, 0);
-        calculateNextTimeout(&data->ti, now, delta);
-        TIMEVAL_TO_TIMESPEC(&delta, &spec.it_value);
-        if (0 == spec.it_value.tv_sec && 0 == spec.it_value.tv_nsec) {
-            spec.it_value.tv_nsec = 500;
-        }
-
-        if (-1 == timerfd_settime(data->ti.fd, 0, &spec, 0)) {
-            qErrnoWarning("%s: timerfd_settime() failed", Q_FUNC_INFO);
-        }
-    }
 }
 
 bool EventDispatcherEPollPrivate::disableTimers(bool disable)
@@ -432,18 +410,18 @@ bool EventDispatcherEPollPrivate::disableTimers(bool disable)
 
     auto it = m_timers.constBegin();
     while (it != m_timers.constEnd()) {
-        HandleData* data = it.value();
+        TimerInfo *data = it.value();
 
         if (!disable) {
             struct timeval delta;
-            calculateNextTimeout(&data->ti, now, delta);
+            calculateNextTimeout(data, now, delta);
             TIMEVAL_TO_TIMESPEC(&delta, &spec.it_value);
             if (0 == spec.it_value.tv_sec && 0 == spec.it_value.tv_nsec) {
                 spec.it_value.tv_nsec = 500;
             }
         }
 
-        if (Q_UNLIKELY(-1 == timerfd_settime(data->ti.fd, 0, &spec, 0))) {
+        if (Q_UNLIKELY(-1 == timerfd_settime(data->fd, 0, &spec, 0))) {
             qErrnoWarning("%s: timerfd_settime() failed", Q_FUNC_INFO);
         }
 
